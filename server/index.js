@@ -7,6 +7,13 @@ import { fileURLToPath } from 'url';
 import { MemoryManager } from './memory.js';
 import { CommandExecutor } from './commands.js';
 import {
+  ReminderEngine, parseReminderTime, parseRepeat,
+  MoodTracker,
+  SummaryEngine,
+  autoTagMemory, autoImportance,
+  FileSearchEngine, formatFileResults,
+} from './advanced.js';
+import {
   getMarketSnapshot, formatMarketSnapshot,
   getQuote, formatQuote,
   analyzeStock, formatAnalysis,
@@ -39,6 +46,14 @@ const wss = new WebSocketServer({ server });
 
 const memory = new MemoryManager(CONFIG.dbPath);
 const commander = new CommandExecutor(memory);
+const reminders = new ReminderEngine(memory.db);
+const mood = new MoodTracker(memory.db);
+const summaries = new SummaryEngine(memory.db, CONFIG.ollamaUrl, CONFIG.model);
+const fileSearch = new FileSearchEngine();
+
+// Start reminder scheduler
+reminders.startAll();
+reminders.startPeriodicCheck();
 
 // Load personality profiles
 const profilesPath = join(ROOT, 'personalities', 'profiles.json');
@@ -187,6 +202,62 @@ app.get('/api/quant/watchlist', (req, res) => {
   res.json(WATCHLIST);
 });
 
+// ── Advanced Feature Endpoints ──
+
+// Reminders
+app.get('/api/reminders', (req, res) => {
+  res.json(reminders.getAll());
+});
+
+app.post('/api/reminders', (req, res) => {
+  const { content, due_at, repeat } = req.body;
+  if (!content || !due_at) return res.status(400).json({ error: 'Need content and due_at' });
+  res.json(reminders.add(content, due_at, repeat || null));
+});
+
+app.delete('/api/reminders/:id', (req, res) => {
+  res.json(reminders.remove(parseInt(req.params.id)));
+});
+
+// Mood
+app.get('/api/mood', (req, res) => {
+  res.json(mood.getCurrentMood());
+});
+
+app.get('/api/mood/history', (req, res) => {
+  const days = parseInt(req.query.days) || 7;
+  res.json(mood.getHistory(days));
+});
+
+app.get('/api/mood/daily', (req, res) => {
+  res.json(mood.getDailySummary());
+});
+
+// Summaries
+app.get('/api/summaries', (req, res) => {
+  res.json(summaries.getRecent(parseInt(req.query.days) || 7));
+});
+
+app.post('/api/summaries/generate', async (req, res) => {
+  try {
+    const date = req.body.date || null;
+    const result = await summaries.generateSummary(date);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// File search
+app.get('/api/files/search', (req, res) => {
+  const q = req.query.q;
+  if (!q) return res.status(400).json({ error: 'Need ?q=query' });
+  const paths = req.query.paths ? req.query.paths.split(',') : null;
+  res.json(fileSearch.search(q, paths));
+});
+
+app.get('/api/files/info', (req, res) => {
+  res.json(fileSearch.getSearchableInfo());
+});
+
 // ── WebSocket (streaming chat) ──
 
 wss.on('connection', (ws) => {
@@ -194,6 +265,7 @@ wss.on('connection', (ws) => {
   let currentPersonality = 'default';
 
   console.log(`[WS] New connection: ${sessionId}`);
+  reminders.addListener(ws);
 
   ws.on('message', async (raw) => {
     let msg;
@@ -346,21 +418,123 @@ async function handleSlashCommand(ws, content) {
         result = formatMoonshots(picks);
         break;
       }
+
+      // ── Advanced Feature Commands ──
+
+      case 'remind':
+      case 'reminder': {
+        if (!arg) {
+          // Show pending reminders
+          const all = reminders.getAll();
+          if (!all.length) { result = '📭 No pending reminders.'; break; }
+          result = '⏰ **Pending Reminders:**\n\n';
+          for (const r of all) {
+            result += `\`#${r.id}\` ${r.content} — **${r.due_at}**${r.repeat ? ` (${r.repeat})` : ''}\n`;
+          }
+          break;
+        }
+        // Try to parse: /remind in 10 minutes check the market
+        const fullText = parts.slice(1).join(' ');
+        const dueAt = parseReminderTime(fullText);
+        if (!dueAt) {
+          result = '⚠ Could not parse time. Try: `/remind in 10 minutes check email` or `/remind at 3:00pm meeting`';
+          break;
+        }
+        const repeat = parseRepeat(fullText);
+        // Extract the actual reminder content (remove time parts)
+        const reminderContent = fullText
+          .replace(/in\s+\d+\s*\w+/i, '')
+          .replace(/at\s+\d{1,2}:\d{2}\s*(am|pm)?/i, '')
+          .replace(/tomorrow/i, '')
+          .replace(/every\s*\w+/i, '')
+          .trim() || fullText;
+        const rem = reminders.add(reminderContent, dueAt, repeat);
+        result = `⏰ Reminder set: "${rem.content}" — ${rem.due_at}${rem.repeat ? ` (repeats ${rem.repeat})` : ''}`;
+        break;
+      }
+      case 'cancelremind':
+      case 'delremind': {
+        const id = parseInt(arg);
+        if (!id) { result = '⚠ Usage: /cancelremind ID'; break; }
+        reminders.remove(id);
+        result = `✅ Reminder #${id} cancelled.`;
+        break;
+      }
+
+      case 'mood': {
+        const current = mood.getCurrentMood();
+        const daily = mood.getDailySummary();
+        result = `**${current.label}** (score: ${current.score}) — trend: ${current.trend}\n\n`;
+        if (daily.length) {
+          result += '**Last 7 days:**\n';
+          for (const d of daily.slice(0, 7)) {
+            const label = mood.scoreToLabel(d.avg_score);
+            const triggers = d.all_triggers ? ` [${d.all_triggers}]` : '';
+            result += `${d.day}: ${label} (${d.entries} msgs)${triggers}\n`;
+          }
+        }
+        break;
+      }
+
+      case 'summary':
+      case 'digest': {
+        const date = arg ? parts[1] : null;
+        ws.send(JSON.stringify({ type: 'system_msg', content: '📝 Generating summary...' }));
+        const sum = await summaries.generateSummary(date);
+        result = `**📝 Summary for ${sum.date}** (${sum.message_count} messages)\n\n${sum.summary}`;
+        if (sum.topics?.length) result += `\n\n**Topics:** ${Array.isArray(sum.topics) ? sum.topics.join(', ') : sum.topics}`;
+        break;
+      }
+      case 'history': {
+        const recent = summaries.getRecent(7);
+        if (!recent.length) { result = '📭 No summaries yet. Use `/summary` to generate one.'; break; }
+        result = '**📝 Recent Summaries:**\n\n';
+        for (const s of recent) {
+          result += `**${s.date}** (${s.message_count} msgs): ${s.summary.substring(0, 120)}...\n`;
+        }
+        break;
+      }
+
+      case 'find':
+      case 'search':
+      case 'files': {
+        if (!arg) { result = '⚠ Usage: /find filename or keyword'; break; }
+        ws.send(JSON.stringify({ type: 'system_msg', content: `🔍 Searching files for "${parts.slice(1).join(' ')}"...` }));
+        const query = parts.slice(1).join(' ');
+        const results_arr = fileSearch.search(query);
+        result = formatFileResults(results_arr, query);
+        break;
+      }
+
       case 'help': {
-        result = `**📖 Kabuneko Quant Commands**
+        result = `**📖 VELLE.AI Commands**
 
-/market — Market snapshot (indices, macro, crypto)
-/quote TICKER — Quick price quote
-/analyze TICKER — Full quant analysis + technicals
-/chart TICKER [range] — Chart data (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y)
-/momentum [N] — Top N momentum leaders
-/dislocate [N] — Value dislocation scanner
-/backtest TICKER — RSI strategy backtest
-/sentiment TICKER — News sentiment scan
-/moonshot — Stealth breakout radar
+**📊 Quant**
+/market — Market snapshot
+/quote TICKER — Price quote
+/analyze TICKER — Full quant analysis
+/chart TICKER [range] — Chart (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y)
+/momentum [N] — Momentum leaders
+/dislocate [N] — Value dislocations
+/backtest TICKER — RSI backtest
+/sentiment TICKER — News sentiment
+/moonshot — Breakout radar
 
-Ranges: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, max
-Or just ask naturally — the LLM knows Kabuneko's tools. 😼`;
+**⏰ Reminders**
+/remind in 10 min check email — Set a reminder
+/remind at 3:00pm meeting — Schedule by time
+/remind — Show all pending
+/cancelremind ID — Cancel a reminder
+
+**🧠 Memory & Mood**
+/mood — Current mood + 7-day trend
+/summary [date] — Generate daily digest
+/history — Recent summaries
+
+**📁 Files**
+/find query — Search local files by name/content
+
+Or just ask naturally — VELLE.AI knows all these tools. 😼`;
         break;
       }
       default:
@@ -423,6 +597,20 @@ IMPORTANT for run_shell:
   const isFinanceQuery = /\b(stock|market|trade|crypto|bull|bear|portfolio|ticker|price|chart|analysis|momentum|rsi|backtest|earnings|sentiment)\b/i.test(userMessage);
   const isKabuneko = personalityId === 'kabuneko';
 
+  // ── Mood + Reminder context (always inject) ──
+  const currentMood = mood.getCurrentMood();
+  const upcomingReminders = reminders.getUpcoming(30);
+  let advancedContext = `\n\n## User Mood: ${currentMood.label} (trend: ${currentMood.trend})`;
+  if (currentMood.score < -0.3) {
+    advancedContext += '\nThe user seems down — be extra supportive and encouraging.';
+  }
+  if (upcomingReminders.length) {
+    advancedContext += '\n\n## Upcoming Reminders:';
+    for (const r of upcomingReminders.slice(0, 3)) {
+      advancedContext += `\n- "${r.content}" due at ${r.due_at}`;
+    }
+  }
+
   if (isKabuneko || isFinanceQuery) {
     // Check if user is asking about a specific ticker
     const tickerMatch = userMessage.match(/\$?([A-Z]{2,5})\b/);
@@ -443,7 +631,7 @@ Use this data in your response. If the user wants deeper analysis, suggest they 
   const messages = [
     {
       role: 'system',
-      content: personality.system_prompt + memorySection + quantContext + commandSection
+      content: personality.system_prompt + memorySection + advancedContext + quantContext + commandSection
     },
     ...context.history,
     { role: 'user', content: userMessage }
@@ -515,7 +703,7 @@ Use this data in your response. If the user wants deeper analysis, suggest they 
             }
 
             // Check for "remember" patterns in user message
-            await autoExtractMemories(userMessage, fullResponse, ws);
+            await autoExtractMemories(userMessage, fullResponse, ws, sessionId);
 
             ws.send(JSON.stringify({
               type: 'stream_end',
@@ -536,10 +724,13 @@ Use this data in your response. If the user wants deeper analysis, suggest they 
   }
 }
 
-// ── Auto-extract memories from user messages ──
+// ── Auto-extract memories from user messages (with auto-tagging) ──
 
-async function autoExtractMemories(userMessage, assistantResponse, ws) {
+async function autoExtractMemories(userMessage, assistantResponse, ws, sessionId) {
   const lower = userMessage.toLowerCase();
+
+  // ── Mood tracking (every user message) ──
+  const moodResult = mood.track(userMessage, sessionId);
 
   // Explicit "remember" triggers
   const rememberPatterns = [
@@ -554,10 +745,14 @@ async function autoExtractMemories(userMessage, assistantResponse, ws) {
     const match = userMessage.match(pattern);
     if (match) {
       const fact = match[1].trim();
-      const result = memory.saveMemory(fact, 'user_stated', 7, 'auto');
+      const tags = autoTagMemory(fact);
+      const importance = autoImportance(fact, tags[0]);
+      const result = memory.saveMemory(fact, tags[0], importance, 'auto');
       ws.send(JSON.stringify({
         type: 'memory_auto_saved',
         content: fact,
+        category: tags[0],
+        tags,
         ...result
       }));
       return;
@@ -571,14 +766,44 @@ async function autoExtractMemories(userMessage, assistantResponse, ws) {
     /i work (?:at|for|on) (.+)/i,
     /i live (?:in|at|near) (.+)/i,
     /i'm (?:a |an )?(\w+ (?:developer|engineer|designer|writer|student|teacher|manager))/i,
+    /my (?:name|birthday|email|phone|address) (?:is |was )(.+)/i,
+    /i (?:just )?(?:started|finished|completed|began) (.+)/i,
+    /i(?:'m| am) (?:working on|building|learning|studying) (.+)/i,
+    /i (?:need to|want to|plan to|going to) (.+)/i,
   ];
 
   for (const pattern of prefPatterns) {
     const match = userMessage.match(pattern);
     if (match) {
       const fact = userMessage.replace(/^(hey|hi|so|well|okay|um)\s+/i, '').trim();
-      memory.saveMemory(fact, 'preference', 5, 'auto');
+      const tags = autoTagMemory(fact);
+      const importance = autoImportance(fact, tags[0]);
+      memory.saveMemory(fact, tags[0], importance, 'auto');
       // Silent save — don't notify for auto-detected preferences
+      break;
+    }
+  }
+
+  // ── Proactive reminder detection from natural language ──
+  const reminderPatterns = [
+    /remind me (?:to )?(.+?)(?:\s+(?:in|at|tomorrow|every)\b.+)/i,
+    /don'?t let me forget (?:to )?(.+)/i,
+    /set (?:a )?reminder (?:to |for )?(.+)/i,
+  ];
+
+  for (const pattern of reminderPatterns) {
+    const match = userMessage.match(pattern);
+    if (match) {
+      const dueAt = parseReminderTime(userMessage);
+      if (dueAt) {
+        const repeat = parseRepeat(userMessage);
+        const content = match[1].trim();
+        const rem = reminders.add(content, dueAt, repeat);
+        ws.send(JSON.stringify({
+          type: 'reminder_set',
+          ...rem
+        }));
+      }
       break;
     }
   }

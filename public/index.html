@@ -913,6 +913,10 @@
         <button class="quant-cmd-btn" onclick="promptSlash('/backtest ')">📊 Backtest</button>
         <button class="quant-cmd-btn" onclick="promptSlash('/sentiment ')">📰 Sentiment</button>
         <button class="quant-cmd-btn" onclick="runSlash('/moonshot')">🌙 Moonshot</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/remind')">⏰ Reminders</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/mood')">🧠 Mood</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/summary')">📝 Summary</button>
+        <button class="quant-cmd-btn" onclick="promptSlash('/find ')">📁 Files</button>
         <button class="quant-cmd-btn" onclick="runSlash('/help')">❓ Help</button>
       </div>
       <div class="input-row">
@@ -1071,6 +1075,22 @@ function handleMessage(msg) {
       if (msg.data && !msg.data.error) {
         renderChart(msg.data);
       }
+      break;
+
+    case 'reminder_fired':
+      addSystemMessage(`⏰ **REMINDER:** ${msg.content}`);
+      // Browser notification if available
+      if (Notification.permission === 'granted') {
+        new Notification('VELLE.AI Reminder', { body: msg.content, icon: '⏰' });
+      }
+      // TTS
+      if (typeof voice !== 'undefined' && voice.ttsEnabled) {
+        speak(`Reminder: ${msg.content}`);
+      }
+      break;
+
+    case 'reminder_set':
+      addSystemMessage(`⏰ Reminder set: "${msg.content}" — ${msg.due_at}${msg.repeat ? ` (${msg.repeat})` : ''}`);
       break;
 
     case 'error':
@@ -1327,6 +1347,11 @@ $('#newSessionBtn').addEventListener('click', () => {
 // ── Boot ──
 
 connect();
+
+// Request notification permission for reminders
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
 
 // Refresh memories periodically
 setInterval(loadMemories, 30000);
