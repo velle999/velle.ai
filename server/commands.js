@@ -103,10 +103,12 @@ const COMMAND_HANDLERS = {
     const ALLOWED_APPS = {
       'file_manager': { win32: 'explorer', darwin: 'open -a Finder', linux: 'nautilus' },
       'terminal': { win32: 'wt', darwin: 'open -a Terminal', linux: 'gnome-terminal' },
+      'powershell': { win32: 'start powershell', darwin: 'open -a Terminal', linux: 'gnome-terminal' },
       'calculator': { win32: 'calc', darwin: 'open -a Calculator', linux: 'gnome-calculator' },
       'text_editor': { win32: 'notepad', darwin: 'open -a TextEdit', linux: 'gedit' },
     };
-    const app = ALLOWED_APPS[params.app];
+    const appKey = (params.app || '').toLowerCase().replace(/\.exe$/, '').replace(/\s+/g, '_');
+    const app = ALLOWED_APPS[appKey];
     if (!app) return { success: false, result: `Unknown app: ${params.app}. Available: ${Object.keys(ALLOWED_APPS).join(', ')}` };
     const cmd = app[process.platform] || app.linux;
     await execAsync(cmd);
@@ -150,7 +152,7 @@ const COMMAND_HANDLERS = {
     // Platform-aware safe commands
     const isWin = process.platform === 'win32';
     const SAFE_COMMANDS = isWin
-      ? ['date /t', 'time /t', 'whoami', 'cd', 'hostname', 'systeminfo', 'tasklist', 'ver', 'vol', 'dir']
+      ? ['date /t', 'time /t', 'whoami', 'cd', 'hostname', 'systeminfo', 'tasklist', 'ver', 'vol', 'dir', 'powershell', 'powershell.exe', 'start powershell']
       : ['date', 'whoami', 'pwd', 'uptime', 'df -h', 'free -h', 'hostname', 'uname -a'];
 
     const cmd = params.command?.trim();
