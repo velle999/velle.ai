@@ -527,6 +527,185 @@
     background: var(--accent-dim);
   }
 
+  /* ── Voice UI ── */
+  .voice-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .voice-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .voice-btn.listening {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: #ff336615;
+    box-shadow: 0 0 20px #ff336633;
+    animation: voicePulse 1.5s ease-in-out infinite;
+  }
+
+  .voice-btn svg { width: 18px; height: 18px; }
+
+  @keyframes voicePulse {
+    0%, 100% { box-shadow: 0 0 10px #ff336622; }
+    50% { box-shadow: 0 0 25px #ff336644; }
+  }
+
+  /* Voice visualizer ring around mic button */
+  .voice-btn .voice-ring {
+    position: absolute;
+    inset: -4px;
+    border-radius: 12px;
+    border: 2px solid var(--danger);
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+
+  .voice-btn.listening .voice-ring {
+    opacity: 1;
+    animation: ringPulse 1s ease-in-out infinite;
+  }
+
+  @keyframes ringPulse {
+    0%, 100% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.15); opacity: 0.2; }
+  }
+
+  /* TTS toggle */
+  .tts-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    font-size: 16px;
+  }
+
+  .tts-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .tts-btn.active {
+    border-color: var(--success);
+    color: var(--success);
+    background: #00ff8815;
+  }
+
+  .tts-btn.speaking {
+    animation: speakPulse 0.6s ease-in-out infinite;
+  }
+
+  @keyframes speakPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Voice status indicator */
+  .voice-status {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--danger);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .voice-status.active { display: flex; }
+
+  .voice-status .vs-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  /* Audio visualizer bar */
+  .voice-visualizer {
+    display: none;
+    height: 24px;
+    gap: 2px;
+    align-items: center;
+    padding: 0 8px;
+  }
+
+  .voice-visualizer.active { display: flex; }
+
+  .voice-visualizer .vbar {
+    width: 3px;
+    background: var(--danger);
+    border-radius: 2px;
+    transition: height 0.08s ease;
+    min-height: 3px;
+  }
+
+  /* Hands-free mode toggle in sidebar */
+  .voice-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .voice-mode-toggle label { cursor: pointer; }
+
+  .toggle-switch {
+    position: relative;
+    width: 32px;
+    height: 18px;
+    background: var(--bg-surface);
+    border-radius: 9px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    transition: all 0.2s;
+  }
+
+  .toggle-switch:checked {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+  }
+
+  .toggle-switch:checked::after {
+    left: 16px;
+    background: var(--accent);
+  }
+
   /* ── Input Area ── */
   .input-area {
     padding: 16px 32px 24px;
@@ -691,6 +870,23 @@
     </div>
 
     <div class="sidebar-section">
+      <div class="sidebar-label">Voice</div>
+      <div class="voice-mode-toggle">
+        <input type="checkbox" class="toggle-switch" id="handsFreeToggle">
+        <label for="handsFreeToggle">Hands-free mode</label>
+      </div>
+      <div class="voice-mode-toggle">
+        <input type="checkbox" class="toggle-switch" id="autoTTSToggle">
+        <label for="autoTTSToggle">Auto read responses</label>
+      </div>
+      <div class="voice-mode-toggle">
+        <select id="voiceSelect" style="background:var(--bg-surface);border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-family:inherit;font-size:10px;padding:4px 6px;flex:1;">
+          <option value="">Loading voices...</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
       <button class="new-session-btn" id="newSessionBtn">+ New Session</button>
     </div>
   </aside>
@@ -720,10 +916,29 @@
         <button class="quant-cmd-btn" onclick="runSlash('/help')">❓ Help</button>
       </div>
       <div class="input-row">
+        <!-- Voice visualizer -->
+        <div class="voice-visualizer" id="voiceVisualizer">
+          <div class="vbar" style="height:3px"></div><div class="vbar" style="height:3px"></div>
+          <div class="vbar" style="height:3px"></div><div class="vbar" style="height:3px"></div>
+          <div class="vbar" style="height:3px"></div><div class="vbar" style="height:3px"></div>
+          <div class="vbar" style="height:3px"></div><div class="vbar" style="height:3px"></div>
+          <div class="vbar" style="height:3px"></div><div class="vbar" style="height:3px"></div>
+          <div class="vbar" style="height:3px"></div><div class="vbar" style="height:3px"></div>
+        </div>
+        <!-- Mic button -->
+        <button class="voice-btn" id="voiceBtn" title="Hold to talk / Click for hands-free">
+          <div class="voice-ring"></div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+        </button>
         <div class="input-wrapper">
           <textarea
             id="chatInput"
-            placeholder="Type a message..."
+            placeholder="Type a message or hold 🎤 to talk..."
             rows="1"
           ></textarea>
         </div>
@@ -733,11 +948,14 @@
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
           </svg>
         </button>
+        <!-- TTS toggle -->
+        <button class="tts-btn" id="ttsBtn" title="Toggle voice output">🔇</button>
       </div>
       <div class="input-hints">
         <span class="input-hint"><kbd>Enter</kbd> send</span>
         <span class="input-hint"><kbd>Shift+Enter</kbd> new line</span>
-        <span class="input-hint">Say "remember that..." to save memories</span>
+        <span class="input-hint">Hold <kbd>🎤</kbd> push-to-talk or click to toggle</span>
+        <span class="voice-status" id="voiceStatus"><span class="vs-dot"></span> LISTENING</span>
       </div>
     </div>
   </main>
@@ -1337,6 +1555,484 @@ function renderChart(chartData) {
 function loadChartRange(ticker, range) {
   send('chat', { content: `/chart ${ticker} ${range}` });
 }
+
+// ═══════════════════════════════════════
+//  VOICE ENGINE — STT + TTS
+// ═══════════════════════════════════════
+
+const voice = {
+  recognition: null,
+  synthesis: window.speechSynthesis,
+  supported: false,
+  listening: false,
+  handsFree: false,
+  ttsEnabled: false,
+  autoTTS: false,
+  speaking: false,
+  selectedVoice: null,
+  audioContext: null,
+  analyser: null,
+  micStream: null,
+  pushToTalk: false,        // true = PTT mode (hold), false = toggle mode
+  silenceTimer: null,
+  silenceThreshold: 2000,   // ms of silence before auto-stop in hands-free
+  interimTranscript: '',
+  finalTranscript: '',
+};
+
+function initVoice() {
+  // Check Speech Recognition support
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.warn('[Voice] Speech recognition not supported');
+    $('#voiceBtn').style.display = 'none';
+    return;
+  }
+
+  voice.supported = true;
+  voice.recognition = new SpeechRecognition();
+  voice.recognition.continuous = true;
+  voice.recognition.interimResults = true;
+  voice.recognition.lang = 'en-US';
+  voice.recognition.maxAlternatives = 1;
+
+  voice.recognition.onstart = () => {
+    voice.listening = true;
+    $('#voiceBtn').classList.add('listening');
+    $('#voiceStatus').classList.add('active');
+    $('#voiceVisualizer').classList.add('active');
+    startAudioVisualizer();
+    console.log('[Voice] Listening...');
+  };
+
+  voice.recognition.onend = () => {
+    voice.listening = false;
+    $('#voiceBtn').classList.remove('listening');
+    $('#voiceStatus').classList.remove('active');
+    $('#voiceVisualizer').classList.remove('active');
+    stopAudioVisualizer();
+
+    // If hands-free, restart after processing
+    if (voice.handsFree && !voice.speaking && state.connected) {
+      setTimeout(() => {
+        if (voice.handsFree && !voice.speaking) {
+          startListening();
+        }
+      }, 500);
+    }
+
+    // If there's a final transcript, send it
+    if (voice.finalTranscript.trim()) {
+      const text = voice.finalTranscript.trim();
+      voice.finalTranscript = '';
+      voice.interimTranscript = '';
+      chatInput.value = '';
+      addMessage('user', text);
+      send('chat', { content: text });
+    }
+  };
+
+  voice.recognition.onresult = (event) => {
+    voice.interimTranscript = '';
+    voice.finalTranscript = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        voice.finalTranscript += transcript;
+      } else {
+        voice.interimTranscript += transcript;
+      }
+    }
+
+    // Show interim results in the input box
+    chatInput.value = voice.finalTranscript + voice.interimTranscript;
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + 'px';
+
+    // Reset silence timer
+    if (voice.handsFree) {
+      clearTimeout(voice.silenceTimer);
+      if (voice.finalTranscript.trim()) {
+        voice.silenceTimer = setTimeout(() => {
+          stopListening();
+        }, voice.silenceThreshold);
+      }
+    }
+  };
+
+  voice.recognition.onerror = (event) => {
+    console.warn('[Voice] Error:', event.error);
+    if (event.error === 'not-allowed') {
+      addSystemMessage('Microphone access denied. Please allow microphone access in your browser settings.');
+    }
+    voice.listening = false;
+    $('#voiceBtn').classList.remove('listening');
+    $('#voiceStatus').classList.remove('active');
+    $('#voiceVisualizer').classList.remove('active');
+    stopAudioVisualizer();
+  };
+
+  // Load TTS voices
+  loadVoices();
+  if (voice.synthesis) {
+    voice.synthesis.onvoiceschanged = loadVoices;
+  }
+
+  // Setup button interactions
+  setupVoiceButton();
+  setupTTSButton();
+  setupVoiceSettings();
+}
+
+function startListening() {
+  if (!voice.supported || voice.listening) return;
+  // Stop TTS if speaking
+  if (voice.speaking) {
+    voice.synthesis.cancel();
+    voice.speaking = false;
+  }
+  try {
+    voice.finalTranscript = '';
+    voice.interimTranscript = '';
+    voice.recognition.start();
+  } catch (e) {
+    console.warn('[Voice] Start error:', e);
+  }
+}
+
+function stopListening() {
+  if (!voice.listening) return;
+  clearTimeout(voice.silenceTimer);
+  try {
+    voice.recognition.stop();
+  } catch (e) {
+    console.warn('[Voice] Stop error:', e);
+  }
+}
+
+function setupVoiceButton() {
+  const btn = $('#voiceBtn');
+  let holdTimer = null;
+  let isHolding = false;
+
+  // Mouse: hold = PTT, click = toggle
+  btn.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    isHolding = false;
+    holdTimer = setTimeout(() => {
+      isHolding = true;
+      startListening();
+    }, 200);
+  });
+
+  btn.addEventListener('mouseup', () => {
+    clearTimeout(holdTimer);
+    if (isHolding) {
+      // PTT release — stop and send
+      stopListening();
+    } else {
+      // Click toggle
+      if (voice.listening) {
+        stopListening();
+      } else {
+        startListening();
+      }
+    }
+    isHolding = false;
+  });
+
+  btn.addEventListener('mouseleave', () => {
+    clearTimeout(holdTimer);
+    if (isHolding && voice.listening) {
+      stopListening();
+    }
+    isHolding = false;
+  });
+
+  // Touch: same behavior
+  btn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    isHolding = false;
+    holdTimer = setTimeout(() => {
+      isHolding = true;
+      startListening();
+    }, 200);
+  });
+
+  btn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    clearTimeout(holdTimer);
+    if (isHolding) {
+      stopListening();
+    } else {
+      if (voice.listening) stopListening();
+      else startListening();
+    }
+    isHolding = false;
+  });
+
+  // Keyboard: hold Space to talk (when input not focused)
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && document.activeElement !== chatInput && !voice.listening) {
+      e.preventDefault();
+      startListening();
+    }
+  });
+
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' && document.activeElement !== chatInput && voice.listening && !voice.handsFree) {
+      e.preventDefault();
+      stopListening();
+    }
+  });
+}
+
+// ── TTS (Text-to-Speech) ──
+
+function loadVoices() {
+  const voices = voice.synthesis?.getVoices() || [];
+  const select = $('#voiceSelect');
+  if (!select || voices.length === 0) return;
+
+  select.innerHTML = '';
+
+  // Prefer good English voices
+  const preferred = ['Google UK English Male', 'Google UK English Female', 'Microsoft David', 'Microsoft Zira',
+    'Alex', 'Samantha', 'Daniel', 'Karen', 'Moira', 'Fiona'];
+
+  const sorted = [...voices].sort((a, b) => {
+    const aIdx = preferred.findIndex(p => a.name.includes(p));
+    const bIdx = preferred.findIndex(p => b.name.includes(p));
+    if (aIdx !== -1 && bIdx === -1) return -1;
+    if (bIdx !== -1 && aIdx === -1) return 1;
+    if (a.lang.startsWith('en') && !b.lang.startsWith('en')) return -1;
+    if (b.lang.startsWith('en') && !a.lang.startsWith('en')) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  sorted.forEach((v, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${v.name} (${v.lang})`;
+    opt.dataset.voiceIndex = voices.indexOf(v);
+    select.appendChild(opt);
+  });
+
+  // Set default
+  voice.selectedVoice = sorted[0] || null;
+  select.addEventListener('change', () => {
+    const idx = parseInt(select.selectedOptions[0]?.dataset.voiceIndex);
+    voice.selectedVoice = voices[idx] || null;
+  });
+}
+
+function speak(text) {
+  if (!voice.ttsEnabled || !voice.synthesis) return;
+
+  // Strip markdown formatting for cleaner speech
+  const cleaned = text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/```[\s\S]*?```/g, 'code block omitted')
+    .replace(/#{1,6}\s*/g, '')
+    .replace(/[📊🚀💹🧠📈🔍📰🌙💀😼😐🔥⚠🟢🔴🟡⚡🐻🐂🤖]/g, '')
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, '. ')
+    .replace(/_([^_]+)_/g, '$1')
+    .trim();
+
+  if (!cleaned) return;
+
+  // Cancel any current speech
+  voice.synthesis.cancel();
+
+  // Split into chunks if too long (utterance limit ~300 chars for some engines)
+  const chunks = splitForSpeech(cleaned, 250);
+
+  voice.speaking = true;
+  $('#ttsBtn').classList.add('speaking');
+
+  let chunkIndex = 0;
+  function speakNext() {
+    if (chunkIndex >= chunks.length) {
+      voice.speaking = false;
+      $('#ttsBtn').classList.remove('speaking');
+      // Resume listening in hands-free mode
+      if (voice.handsFree && state.connected) {
+        setTimeout(startListening, 300);
+      }
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
+    if (voice.selectedVoice) utterance.voice = voice.selectedVoice;
+    utterance.rate = 1.05;
+    utterance.pitch = 1.0;
+    utterance.volume = 0.9;
+
+    utterance.onend = () => {
+      chunkIndex++;
+      speakNext();
+    };
+
+    utterance.onerror = (e) => {
+      console.warn('[TTS] Error:', e);
+      voice.speaking = false;
+      $('#ttsBtn').classList.remove('speaking');
+    };
+
+    voice.synthesis.speak(utterance);
+  }
+
+  speakNext();
+}
+
+function splitForSpeech(text, maxLen) {
+  const chunks = [];
+  let remaining = text;
+  while (remaining.length > maxLen) {
+    let splitAt = remaining.lastIndexOf('. ', maxLen);
+    if (splitAt === -1 || splitAt < maxLen / 2) {
+      splitAt = remaining.lastIndexOf(' ', maxLen);
+    }
+    if (splitAt === -1) splitAt = maxLen;
+    chunks.push(remaining.slice(0, splitAt + 1).trim());
+    remaining = remaining.slice(splitAt + 1).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+function stopSpeaking() {
+  if (voice.synthesis) {
+    voice.synthesis.cancel();
+    voice.speaking = false;
+    $('#ttsBtn').classList.remove('speaking');
+  }
+}
+
+function setupTTSButton() {
+  const btn = $('#ttsBtn');
+  btn.addEventListener('click', () => {
+    if (voice.speaking) {
+      stopSpeaking();
+      return;
+    }
+    voice.ttsEnabled = !voice.ttsEnabled;
+    btn.classList.toggle('active', voice.ttsEnabled);
+    btn.textContent = voice.ttsEnabled ? '🔊' : '🔇';
+    if (voice.ttsEnabled) {
+      addSystemMessage('Voice output enabled. Responses will be read aloud.');
+    }
+  });
+}
+
+function setupVoiceSettings() {
+  const handsFree = $('#handsFreeToggle');
+  const autoTTS = $('#autoTTSToggle');
+
+  if (handsFree) {
+    handsFree.addEventListener('change', () => {
+      voice.handsFree = handsFree.checked;
+      if (voice.handsFree) {
+        addSystemMessage('Hands-free mode ON — I\'ll listen continuously between responses.');
+        startListening();
+      } else {
+        stopListening();
+        addSystemMessage('Hands-free mode OFF.');
+      }
+    });
+  }
+
+  if (autoTTS) {
+    autoTTS.addEventListener('change', () => {
+      voice.autoTTS = autoTTS.checked;
+      voice.ttsEnabled = autoTTS.checked;
+      const btn = $('#ttsBtn');
+      btn.classList.toggle('active', voice.ttsEnabled);
+      btn.textContent = voice.ttsEnabled ? '🔊' : '🔇';
+    });
+  }
+}
+
+// ── Audio Visualizer (mic input levels) ──
+
+async function startAudioVisualizer() {
+  try {
+    if (!voice.audioContext) {
+      voice.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (voice.audioContext.state === 'suspended') {
+      await voice.audioContext.resume();
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    voice.micStream = stream;
+    const source = voice.audioContext.createMediaStreamSource(stream);
+    voice.analyser = voice.audioContext.createAnalyser();
+    voice.analyser.fftSize = 64;
+    source.connect(voice.analyser);
+
+    const bufferLength = voice.analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    const bars = $$('#voiceVisualizer .vbar');
+
+    function draw() {
+      if (!voice.listening) return;
+      requestAnimationFrame(draw);
+      voice.analyser.getByteFrequencyData(dataArray);
+
+      // Map frequency data to bars
+      const step = Math.floor(bufferLength / bars.length);
+      bars.forEach((bar, i) => {
+        const val = dataArray[i * step] || 0;
+        const height = Math.max(3, (val / 255) * 24);
+        bar.style.height = height + 'px';
+      });
+    }
+    draw();
+  } catch (e) {
+    console.warn('[Voice] Visualizer error:', e);
+  }
+}
+
+function stopAudioVisualizer() {
+  if (voice.micStream) {
+    voice.micStream.getTracks().forEach(t => t.stop());
+    voice.micStream = null;
+  }
+  // Reset bars
+  $$('#voiceVisualizer .vbar').forEach(bar => {
+    bar.style.height = '3px';
+  });
+}
+
+// ── Hook TTS into message flow ──
+
+// Patch the finalizeStreamingMessage to trigger TTS
+const _originalFinalize = finalizeStreamingMessage;
+finalizeStreamingMessage = function(fullContent) {
+  _originalFinalize(fullContent);
+  // Auto-speak response if TTS is enabled
+  if (voice.ttsEnabled && fullContent) {
+    speak(fullContent);
+  }
+};
+
+// Also speak slash command results
+const _originalHandleMessage = handleMessage;
+handleMessage = function(msg) {
+  _originalHandleMessage(msg);
+  if (msg.type === 'slash_result' && voice.ttsEnabled && msg.content) {
+    speak(msg.content);
+  }
+};
+
+// ── Init ──
+
+initVoice();
 </script>
 </body>
 </html>
