@@ -1,6 +1,6 @@
-# 🤖 AI Companion
+# ⚡ VELLE.AI
 
-A locally running AI assistant that remembers things about you, talks in different personalities, and runs commands on your system. Everything stays on your machine.
+Local AI that remembers you, talks back, runs quant analysis, and executes system commands. Everything on your machine — no cloud, no leash.
 
 ## Quick Start
 
@@ -12,48 +12,31 @@ A locally running AI assistant that remembers things about you, talks in differe
 ### Setup
 
 ```bash
-# 1. Pull a model (pick one)
-ollama pull llama3.2          # 3B — fast, good for conversation
-ollama pull llama3.1          # 8B — smarter, needs more RAM
-ollama pull mistral           # 7B — good alternative
+# 1. Pull a model
+ollama pull qwen3:8b
 
 # 2. Install dependencies
-cd ai-companion
 npm install
 
 # 3. Run
-npm start
-# or with file watching for dev:
-npm run dev
+$env:MODEL="qwen3:8b"; npm start
 ```
 
-Open **http://localhost:3000** and start chatting.
-
-### Environment Variables
-
-```bash
-PORT=3000                                # Server port
-OLLAMA_URL=http://localhost:11434        # Ollama API endpoint
-MODEL=llama3.2                           # Model name (must be pulled in Ollama)
-```
-
-Example with a different model:
-```bash
-MODEL=mistral npm start
-```
+Open **http://localhost:3000**
 
 ## Architecture
 
 ```
-ai-companion/
+velle-ai/
 ├── server/
 │   ├── index.js          # Express + WebSocket server, Ollama integration
-│   ├── memory.js         # SQLite memory manager (conversations, facts, search)
-│   └── commands.js       # Whitelist-based system command executor
+│   ├── memory.js         # SQLite memory manager
+│   ├── commands.js       # System + quant command executor
+│   └── quant.js          # Kabuneko quant engine (market data, TA, momentum)
 ├── personalities/
-│   └── profiles.json     # Personality definitions (system prompts, styles)
+│   └── profiles.json     # Personality definitions
 ├── public/
-│   └── index.html        # Cyberpunk terminal chat UI (single file)
+│   └── index.html        # Cyberpunk terminal UI + voice engine + charts
 ├── memory/
 │   └── companion.db      # SQLite database (auto-created)
 └── package.json
@@ -62,70 +45,50 @@ ai-companion/
 ## Features
 
 ### Personalities
-Switch between modes that change the AI's system prompt, temperature, and UI theme:
 - 🤖 **Default** — Helpful and conversational
 - 😏 **Sarcastic** — Dry wit, playful roasts
 - 😈 **Evil Genius** — Bond villain energy
 - ⚡ **Anime Mentor** — Everything is a training arc
 - 😴 **Sleepy** — Drowsy but insightful
+- 😼 **Kabuneko** — Sarcastic quant-savvy finance gremlin
 - 🔮 **Netrunner** — Cyberpunk street runner
 
+### Voice (two-way)
+- **Speech-to-Text**: Browser-native Web Speech API
+- **Text-to-Speech**: System voices with auto-read toggle
+- **Push-to-talk**: Hold mic button or Space bar
+- **Hands-free mode**: Continuous listen → respond → listen loop
+- **Audio visualizer**: Real-time mic level bars
+- **Voice selector**: Pick from installed system voices
+
+### Kabuneko Quant Engine
+Slash commands from chat:
+```
+/market              — Indices, macro, crypto snapshot
+/quote NVDA          — Quick price quote
+/analyze AAPL        — Full quant report (RSI, MACD, BB, ADX, Sharpe, etc.)
+/chart TSLA 1y       — Interactive canvas chart with indicators
+/momentum            — Multi-timeframe momentum leaders
+/dislocate           — Value dislocation scanner
+/backtest AMD        — RSI strategy backtest vs buy & hold
+/sentiment PLTR      — News headline sentiment scan
+/moonshot            — Stealth breakout radar
+```
+
 ### Memory System
-- **Explicit saves**: Say "remember that I like coffee" and it's stored
-- **Auto-detection**: Preferences and facts are silently captured
-- **Context injection**: Relevant memories are pulled into each conversation
-- **Persistent**: Memories survive across sessions (stored in SQLite)
+- **Explicit saves**: "remember that I like coffee"
+- **Auto-detection**: Preferences captured silently
+- **Context injection**: Relevant memories in every prompt
+- **Persistent**: SQLite, survives across sessions
 
 ### System Commands
-The AI can execute whitelisted commands when you ask:
-- `open_browser` — Opens a URL
-- `open_app` — Opens allowed apps (file manager, terminal, calculator, etc.)
-- `play_music` — Searches YouTube for music
-- `set_reminder` — Logs a reminder
-- `system_info` — Shows system stats
-- `run_shell` — Runs safe shell commands (date, whoami, etc.)
+Whitelisted actions the AI can trigger:
+- `open_browser`, `open_app`, `play_music`, `set_reminder`, `system_info`
 
-### Streaming
-Responses stream token-by-token via WebSocket for a responsive feel.
+## Environment Variables
 
-## Extending
-
-### Add a personality
-Edit `personalities/profiles.json` and add a new entry:
-```json
-"pirate": {
-  "name": "Pirate",
-  "icon": "🏴‍☠️",
-  "temperature": 0.85,
-  "system_prompt": "You are a pirate AI. Speak like a sea dog...",
-  "greeting": "Ahoy! What be yer query?",
-  "style": { "accent_color": "#ff8800", "glow_intensity": 1.3 }
-}
+```bash
+PORT=3000                                # Server port
+OLLAMA_URL=http://localhost:11434        # Ollama API endpoint
+MODEL=qwen3:8b                          # Model name
 ```
-
-### Add a command
-Edit `server/commands.js` and add to `COMMAND_HANDLERS`:
-```js
-my_command: async (params) => {
-  // do something
-  return { success: true, result: 'Done!' };
-}
-```
-
-### Upgrade memory to vector search
-Replace SQLite keyword search with `sqlite-vec` for semantic search:
-1. `npm install sqlite-vec`
-2. Generate embeddings via Ollama's `/api/embed` endpoint
-3. Store embeddings alongside memories
-4. Use cosine similarity for retrieval
-
-## Roadmap
-
-- [ ] Voice input (whisper.cpp)
-- [ ] Voice output (Piper TTS)
-- [ ] Proactive reminders / notifications
-- [ ] Daily conversation summaries
-- [ ] Vector search for memories
-- [ ] Electron desktop wrapper
-- [ ] Mood drift system
-- [ ] Local file search assistant

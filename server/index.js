@@ -577,7 +577,7 @@ async function autoExtractMemories(userMessage, assistantResponse, ws) {
 server.listen(CONFIG.port, () => {
   console.log(`
   ╔══════════════════════════════════════════╗
-  ║       🤖 AI COMPANION — ONLINE          ║
+  ║         ⚡ VELLE.AI — ONLINE            ║
   ╠══════════════════════════════════════════╣
   ║  Server:  http://localhost:${CONFIG.port}          ║
   ║  Ollama:  ${CONFIG.ollamaUrl.padEnd(28)}║

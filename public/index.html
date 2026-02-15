@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI COMPANION</title>
+<title>VELLE.AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
@@ -846,7 +846,7 @@
   <!-- Header -->
   <header class="header">
     <div class="header-left">
-      <span class="logo">AI COMPANION</span>
+      <span class="logo">VELLE.AI</span>
       <div class="status-dot connecting" id="statusDot"></div>
       <span class="status-text" id="statusText">CONNECTING...</span>
     </div>
@@ -895,9 +895,9 @@
   <main class="chat-area">
     <div class="messages" id="messages">
       <div class="welcome" id="welcome">
-        <div class="welcome-icon">🤖</div>
-        <h2>ONLINE</h2>
-        <p>Your local AI companion. Everything runs on your machine — no data leaves your network. Select a personality and start chatting.</p>
+        <div class="welcome-icon">⚡</div>
+        <h2>VELLE.AI</h2>
+        <p>Your local AI. Memory, voice, quant engine — everything on your machine. No cloud, no leash. Pick a personality and start talking.</p>
       </div>
     </div>
 
@@ -963,7 +963,7 @@
 
 <script>
 // ══════════════════════════════════════════
-//  AI COMPANION — Client
+//  VELLE.AI — Client
 // ══════════════════════════════════════════
 
 const $ = (sel) => document.querySelector(sel);
@@ -1057,6 +1057,10 @@ function handleMessage(msg) {
 
     case 'slash_result':
       addMessage('assistant', msg.content);
+      // Voice: speak slash command results
+      if (typeof voice !== 'undefined' && voice.ttsEnabled && msg.content) {
+        speak(msg.content);
+      }
       break;
 
     case 'system_msg':
@@ -1133,6 +1137,10 @@ function finalizeStreamingMessage(fullContent) {
     contentEl.classList.remove('streaming-cursor');
     contentEl.innerHTML = formatContent(fullContent);
     $('#messages').scrollTop = $('#messages').scrollHeight;
+  }
+  // Voice: auto-speak response
+  if (typeof voice !== 'undefined' && voice.ttsEnabled && fullContent) {
+    speak(fullContent);
   }
 }
 
@@ -1310,7 +1318,7 @@ $('#newSessionBtn').addEventListener('click', () => {
     <div class="welcome" id="welcome">
       <div class="welcome-icon">🤖</div>
       <h2>NEW SESSION</h2>
-      <p>Fresh start. Your memories persist across sessions.</p>
+      <p>Clean slate. Memories carry over.</p>
     </div>
   `;
   loadStats();
@@ -1598,6 +1606,8 @@ function initVoice() {
 
   voice.recognition.onstart = () => {
     voice.listening = true;
+    voice.finalTranscript = '';
+    voice.interimTranscript = '';
     $('#voiceBtn').classList.add('listening');
     $('#voiceStatus').classList.add('active');
     $('#voiceVisualizer').classList.add('active');
@@ -1612,29 +1622,37 @@ function initVoice() {
     $('#voiceVisualizer').classList.remove('active');
     stopAudioVisualizer();
 
-    // If hands-free, restart after processing
-    if (voice.handsFree && !voice.speaking && state.connected) {
-      setTimeout(() => {
-        if (voice.handsFree && !voice.speaking) {
-          startListening();
-        }
-      }, 500);
-    }
+    // Send accumulated transcript
+    const text = (voice.finalTranscript || chatInput.value).trim();
+    voice.finalTranscript = '';
+    voice.interimTranscript = '';
 
-    // If there's a final transcript, send it
-    if (voice.finalTranscript.trim()) {
-      const text = voice.finalTranscript.trim();
-      voice.finalTranscript = '';
-      voice.interimTranscript = '';
+    if (text) {
       chatInput.value = '';
+      chatInput.style.height = 'auto';
       addMessage('user', text);
       send('chat', { content: text });
+    }
+
+    // If hands-free, restart after a delay (wait for TTS to finish)
+    if (voice.handsFree && state.connected) {
+      const waitForTTS = () => {
+        if (voice.speaking) {
+          setTimeout(waitForTTS, 300);
+        } else {
+          setTimeout(() => {
+            if (voice.handsFree && !voice.speaking && !voice.listening) {
+              startListening();
+            }
+          }, 500);
+        }
+      };
+      waitForTTS();
     }
   };
 
   voice.recognition.onresult = (event) => {
     voice.interimTranscript = '';
-    voice.finalTranscript = '';
 
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const transcript = event.results[i][0].transcript;
@@ -1645,32 +1663,39 @@ function initVoice() {
       }
     }
 
-    // Show interim results in the input box
-    chatInput.value = voice.finalTranscript + voice.interimTranscript;
+    // Show live transcription in input box
+    const display = voice.finalTranscript + voice.interimTranscript;
+    chatInput.value = display;
     chatInput.style.height = 'auto';
     chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + 'px';
 
-    // Reset silence timer
-    if (voice.handsFree) {
+    // In hands-free mode, auto-stop after silence
+    if (voice.handsFree && voice.finalTranscript.trim()) {
       clearTimeout(voice.silenceTimer);
-      if (voice.finalTranscript.trim()) {
-        voice.silenceTimer = setTimeout(() => {
-          stopListening();
-        }, voice.silenceThreshold);
-      }
+      voice.silenceTimer = setTimeout(() => {
+        if (voice.listening) stopListening();
+      }, voice.silenceThreshold);
     }
   };
 
   voice.recognition.onerror = (event) => {
     console.warn('[Voice] Error:', event.error);
-    if (event.error === 'not-allowed') {
-      addSystemMessage('Microphone access denied. Please allow microphone access in your browser settings.');
-    }
     voice.listening = false;
     $('#voiceBtn').classList.remove('listening');
     $('#voiceStatus').classList.remove('active');
     $('#voiceVisualizer').classList.remove('active');
     stopAudioVisualizer();
+
+    if (event.error === 'not-allowed') {
+      addSystemMessage('⚠ Microphone access denied. Click the lock icon in your address bar → allow microphone.');
+    } else if (event.error === 'no-speech') {
+      // Normal — user didn't say anything, just restart in hands-free
+      if (voice.handsFree && state.connected) {
+        setTimeout(startListening, 500);
+      }
+    } else if (event.error !== 'aborted') {
+      addSystemMessage(`⚠ Voice error: ${event.error}`);
+    }
   };
 
   // Load TTS voices
@@ -1691,13 +1716,19 @@ function startListening() {
   if (voice.speaking) {
     voice.synthesis.cancel();
     voice.speaking = false;
+    $('#ttsBtn').classList.remove('speaking');
   }
   try {
-    voice.finalTranscript = '';
-    voice.interimTranscript = '';
     voice.recognition.start();
   } catch (e) {
-    console.warn('[Voice] Start error:', e);
+    // Already started or other error — try stopping first then restarting
+    console.warn('[Voice] Start error, retrying:', e.message);
+    try {
+      voice.recognition.stop();
+      setTimeout(() => {
+        try { voice.recognition.start(); } catch { }
+      }, 200);
+    } catch { }
   }
 }
 
@@ -2008,27 +2039,6 @@ function stopAudioVisualizer() {
     bar.style.height = '3px';
   });
 }
-
-// ── Hook TTS into message flow ──
-
-// Patch the finalizeStreamingMessage to trigger TTS
-const _originalFinalize = finalizeStreamingMessage;
-finalizeStreamingMessage = function(fullContent) {
-  _originalFinalize(fullContent);
-  // Auto-speak response if TTS is enabled
-  if (voice.ttsEnabled && fullContent) {
-    speak(fullContent);
-  }
-};
-
-// Also speak slash command results
-const _originalHandleMessage = handleMessage;
-handleMessage = function(msg) {
-  _originalHandleMessage(msg);
-  if (msg.type === 'slash_result' && voice.ttsEnabled && msg.content) {
-    speak(msg.content);
-  }
-};
 
 // ── Init ──
 

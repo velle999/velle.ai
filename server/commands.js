@@ -147,13 +147,17 @@ const COMMAND_HANDLERS = {
   },
 
   run_shell: async (params) => {
-    // VERY restricted — only allow specific safe commands
-    const SAFE_COMMANDS = ['date', 'whoami', 'pwd', 'uptime', 'df -h', 'free -h'];
+    // Platform-aware safe commands
+    const isWin = process.platform === 'win32';
+    const SAFE_COMMANDS = isWin
+      ? ['date /t', 'time /t', 'whoami', 'cd', 'hostname', 'systeminfo', 'tasklist', 'ver', 'vol', 'dir']
+      : ['date', 'whoami', 'pwd', 'uptime', 'df -h', 'free -h', 'hostname', 'uname -a'];
+
     const cmd = params.command?.trim();
     if (!SAFE_COMMANDS.includes(cmd)) {
       return { success: false, result: `Command not in safe list. Allowed: ${SAFE_COMMANDS.join(', ')}` };
     }
-    const { stdout } = await execAsync(cmd);
+    const { stdout } = await execAsync(cmd, { shell: isWin ? 'cmd.exe' : '/bin/sh' });
     return { success: true, result: stdout.trim() };
   }
 };

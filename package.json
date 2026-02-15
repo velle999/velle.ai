@@ -1,7 +1,7 @@
 {
-  "name": "ai-companion",
+  "name": "velle-ai",
   "version": "1.0.0",
-  "description": "Local AI Companion — JARVIS with your vibe",
+  "description": "VELLE.AI — Local AI with memory, voice, and quant engine",
   "main": "server/index.js",
   "type": "module",
   "scripts": {
