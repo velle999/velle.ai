@@ -149,18 +149,29 @@ const COMMAND_HANDLERS = {
   },
 
   run_shell: async (params) => {
-    // Platform-aware safe commands
     const isWin = process.platform === 'win32';
-    const SAFE_COMMANDS = isWin
-      ? ['date /t', 'time /t', 'whoami', 'cd', 'hostname', 'systeminfo', 'tasklist', 'ver', 'vol', 'dir', 'powershell', 'powershell.exe', 'start powershell']
-      : ['date', 'whoami', 'pwd', 'uptime', 'df -h', 'free -h', 'hostname', 'uname -a'];
+    // Blocked patterns — never allow these regardless
+    const BLOCKED = [/rm\s+-rf/i, /del\s+\/[sfq]/i, /format\s+/i, /shutdown/i, /restart/i, /reg\s+delete/i, /Remove-Item.*-Recurse/i, /Stop-Process/i, /kill/i, /mkfs/i, /dd\s+if/i, /:\(\)\{/];
 
-    const cmd = params.command?.trim();
-    if (!SAFE_COMMANDS.includes(cmd)) {
-      return { success: false, result: `Command not in safe list. Allowed: ${SAFE_COMMANDS.join(', ')}` };
+    const cmd = params.command?.trim()
+      ?.replace(/\s*\/think\b.*$/gi, '')   // Strip qwen3 /think tags
+      ?.replace(/<think>[\s\S]*?<\/think>/gi, '')  // Strip <think> blocks
+      ?.replace(/\s*\/no_think\b/gi, '')
+      ?.trim();
+    if (!cmd) return { success: false, result: 'No command provided.' };
+    if (cmd.length > 200) return { success: false, result: 'Command too long (200 char max).' };
+    if (BLOCKED.some(p => p.test(cmd))) return { success: false, result: 'That command is blocked for safety.' };
+
+    try {
+      const shell = isWin ? 'powershell.exe' : '/bin/sh';
+      const args = isWin ? ['-NoProfile', '-NonInteractive', '-Command', cmd] : ['-c', cmd];
+      const { stdout, stderr } = await execAsync(`${shell} ${args.map(a => `"${a}"`).join(' ')}`, { timeout: 15000 });
+      const output = (stdout || stderr || '').trim();
+      return { success: true, result: output || '(no output)' };
+    } catch (err) {
+      const output = (err.stdout || err.stderr || err.message || '').trim();
+      return { success: false, result: `Error: ${output}` };
     }
-    const { stdout } = await execAsync(cmd, { shell: isWin ? 'cmd.exe' : '/bin/sh' });
-    return { success: true, result: stdout.trim() };
   }
 };
 

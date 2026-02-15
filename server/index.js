@@ -396,15 +396,27 @@ async function handleChat(ws, sessionId, personalityId, userMessage) {
   const commandSection = `\n\n## Available Commands:
 If the user asks you to perform an action on their system, respond with a JSON block containing the action.
 Available actions: ${commander.getAvailableCommands().join(', ')}
-Example: {"action": "open_browser", "url": "https://google.com"}
-Example: {"action": "stock_quote", "ticker": "NVDA"}
-Example: {"action": "stock_analyze", "ticker": "AAPL"}
-Example: {"action": "market_snapshot"}
-Example: {"action": "momentum_scan", "n": "10"}
-Example: {"action": "sentiment", "ticker": "TSLA"}
-Example: {"action": "backtest", "ticker": "AMD"}
-Example: {"action": "moonshot_scan"}
-Only output a command JSON when the user explicitly asks for a system action or financial data.`;
+
+Examples:
+{"action": "open_browser", "url": "https://google.com"}
+{"action": "open_app", "app": "powershell"}
+{"action": "stock_quote", "ticker": "NVDA"}
+{"action": "stock_analyze", "ticker": "AAPL"}
+{"action": "market_snapshot"}
+{"action": "momentum_scan", "n": "10"}
+{"action": "sentiment", "ticker": "TSLA"}
+{"action": "backtest", "ticker": "AMD"}
+{"action": "moonshot_scan"}
+{"action": "run_shell", "command": "Get-Process | Select -First 10"}
+{"action": "run_shell", "command": "ipconfig"}
+{"action": "run_shell", "command": "Get-Date"}
+
+IMPORTANT for run_shell:
+- This system runs Windows with PowerShell. Use PowerShell/Windows commands, NOT bash/Linux.
+- If the user says "run shell" or "run a command" without specifying what, ASK them what command they want to run. Do NOT guess.
+- Only output a command JSON when you know the specific command to execute.
+- Valid examples: dir, ipconfig, Get-Process, Get-Date, systeminfo, hostname, tasklist, whoami, Get-ChildItem, ping
+- NEVER use: rm, del, format, shutdown, restart, kill, Remove-Item, or any destructive commands.`;
 
   // If this is Kabuneko personality or user mentions stocks, enrich with market context
   let quantContext = '';
