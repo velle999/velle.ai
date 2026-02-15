@@ -1,0 +1,5 @@
+node_modules/
+memory/*.db
+memory/*.db-wal
+memory/*.db-shm
+.env

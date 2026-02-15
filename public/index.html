@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI COMPANION</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #00f0ff;
+    --accent-dim: #00f0ff33;
+    --accent-glow: #00f0ff88;
+    --bg-deep: #0a0a0f;
+    --bg-panel: #0d0d14;
+    --bg-surface: #12121c;
+    --bg-hover: #1a1a2e;
+    --text-primary: #e0e0ec;
+    --text-dim: #6a6a80;
+    --text-muted: #3a3a50;
+    --border: #1e1e30;
+    --danger: #ff3366;
+    --success: #00ff88;
+    --warning: #ffaa00;
+    --glow-intensity: 1;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ── Scanline overlay ── */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.08) 2px,
+      rgba(0, 0, 0, 0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── Ambient glow ── */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(
+      ellipse at 30% 20%,
+      var(--accent-dim) 0%,
+      transparent 50%
+    );
+    pointer-events: none;
+    z-index: -1;
+    opacity: calc(0.3 * var(--glow-intensity));
+    animation: ambientDrift 20s ease-in-out infinite;
+  }
+
+  @keyframes ambientDrift {
+    0%, 100% { transform: translate(0, 0); }
+    33% { transform: translate(5%, 3%); }
+    66% { transform: translate(-3%, -2%); }
+  }
+
+  /* ── Layout ── */
+  .app {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+    gap: 1px;
+    background: var(--border);
+  }
+
+  /* ── Header ── */
+  .header {
+    grid-column: 1 / -1;
+    background: var(--bg-panel);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    font-weight: 900;
+    color: var(--accent);
+    letter-spacing: 3px;
+    text-shadow: 0 0 20px var(--accent-glow);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 8px var(--success);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .status-dot.disconnected { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+  .status-dot.connecting { background: var(--warning); box-shadow: 0 0 8px var(--warning); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .status-text {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .stats {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--bg-panel);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+  }
+
+  .sidebar-section {
+    padding: 16px 12px 8px;
+  }
+
+  .sidebar-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .personality-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 4px;
+  }
+
+  .personality-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .personality-btn.active {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 15px var(--accent-dim);
+  }
+
+  .personality-btn .p-icon { font-size: 16px; }
+  .personality-btn .p-name { flex: 1; text-align: left; }
+
+  /* Memory section */
+  .memory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .memory-item {
+    padding: 8px 10px;
+    background: var(--bg-surface);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.4;
+    position: relative;
+    border-left: 2px solid var(--accent-dim);
+  }
+
+  .memory-item .mem-category {
+    font-size: 9px;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 2px;
+  }
+
+  .memory-item .mem-delete {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .memory-item:hover .mem-delete { opacity: 1; }
+  .memory-item .mem-delete:hover { color: var(--danger); }
+
+  .new-session-btn {
+    width: 100%;
+    padding: 10px;
+    background: var(--bg-surface);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 4px;
+  }
+
+  .new-session-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── Chat Area ── */
+  .chat-area {
+    background: var(--bg-deep);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+    scroll-behavior: smooth;
+  }
+
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-track { background: transparent; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .message {
+    margin-bottom: 20px;
+    animation: msgIn 0.3s ease-out;
+    max-width: 780px;
+  }
+
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .message .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .message .msg-role {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .message.user .msg-role { color: var(--warning); }
+  .message.assistant .msg-role { color: var(--accent); }
+
+  .message .msg-time {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .message .msg-content {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-primary);
+    padding-left: 2px;
+  }
+
+  .message.assistant .msg-content {
+    color: #c8c8dc;
+  }
+
+  .message .msg-content code {
+    background: var(--bg-surface);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  .message .msg-content pre {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: 12px;
+  }
+
+  .message.system {
+    text-align: center;
+    margin: 12px 0;
+  }
+
+  .message.system .msg-content {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg-panel);
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+
+  /* Streaming cursor */
+  .streaming-cursor::after {
+    content: '▊';
+    color: var(--accent);
+    animation: blink 0.8s step-end infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* Memory save notification */
+  .memory-toast {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--success);
+    background: #00ff8810;
+    border: 1px solid #00ff8830;
+    padding: 4px 12px;
+    border-radius: 4px;
+    margin-top: 8px;
+  }
+
+  /* ── Command result */
+  .command-result {
+    font-size: 11px;
+    padding: 8px 12px;
+    margin-top: 8px;
+    border-radius: 4px;
+    border-left: 3px solid var(--success);
+    background: #00ff8808;
+    color: var(--success);
+  }
+
+  .command-result.error {
+    border-left-color: var(--danger);
+    background: #ff336608;
+    color: var(--danger);
+  }
+
+  /* ── Chart Panel ── */
+  .chart-panel {
+    display: none;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 12px 0;
+    padding: 16px;
+    max-width: 780px;
+  }
+
+  .chart-panel.visible { display: block; }
+
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .chart-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 2px;
+  }
+
+  .chart-controls {
+    display: flex;
+    gap: 4px;
+  }
+
+  .chart-range-btn {
+    padding: 3px 8px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .chart-range-btn:hover, .chart-range-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .chart-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+  }
+
+  .chart-close-btn:hover { color: var(--danger); }
+
+  .chart-canvas-wrap {
+    position: relative;
+    width: 100%;
+    height: 300px;
+    background: var(--bg-deep);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .chart-canvas-wrap canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  .chart-stats {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .chart-stat {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .chart-stat .stat-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-right: 4px;
+  }
+
+  .chart-stat .stat-up { color: var(--success); }
+  .chart-stat .stat-down { color: var(--danger); }
+
+  /* ── Quant Command Bar ── */
+  .quant-bar {
+    display: flex;
+    gap: 6px;
+    padding: 8px 0;
+    flex-wrap: wrap;
+    max-width: 780px;
+  }
+
+  .quant-cmd-btn {
+    padding: 4px 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .quant-cmd-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-dim);
+  }
+
+  /* ── Input Area ── */
+  .input-area {
+    padding: 16px 32px 24px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+  }
+
+  .input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    max-width: 780px;
+  }
+
+  .input-wrapper {
+    flex: 1;
+    position: relative;
+  }
+
+  #chatInput {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    resize: none;
+    outline: none;
+    min-height: 44px;
+    max-height: 200px;
+    transition: border-color 0.2s;
+    line-height: 1.5;
+  }
+
+  #chatInput:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 15px var(--accent-dim);
+  }
+
+  #chatInput::placeholder { color: var(--text-muted); }
+
+  .send-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .send-btn:hover {
+    background: var(--accent);
+    color: var(--bg-deep);
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+
+  .send-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  .send-btn svg { width: 18px; height: 18px; }
+
+  .input-hints {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+  }
+
+  .input-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+  }
+
+  .input-hint kbd {
+    background: var(--bg-surface);
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    font-family: inherit;
+    font-size: 9px;
+  }
+
+  /* ── Welcome screen ── */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 40px;
+    opacity: 0.8;
+  }
+
+  .welcome-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    filter: drop-shadow(0 0 20px var(--accent-glow));
+  }
+
+  .welcome h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    color: var(--accent);
+    letter-spacing: 4px;
+    margin-bottom: 8px;
+  }
+
+  .welcome p {
+    font-size: 12px;
+    color: var(--text-dim);
+    max-width: 400px;
+    line-height: 1.6;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .messages { padding: 16px; }
+    .input-area { padding: 12px 16px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <span class="logo">AI COMPANION</span>
+      <div class="status-dot connecting" id="statusDot"></div>
+      <span class="status-text" id="statusText">CONNECTING...</span>
+    </div>
+    <div class="header-right">
+      <span class="stats" id="statsDisplay">—</span>
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Personality</div>
+      <div id="personalityList"></div>
+    </div>
+
+    <div class="sidebar-section" style="flex:1; overflow-y:auto;">
+      <div class="sidebar-label">Memories</div>
+      <div class="memory-list" id="memoryList">
+        <div style="font-size:11px; color:var(--text-muted); padding:8px;">No memories yet</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <button class="new-session-btn" id="newSessionBtn">+ New Session</button>
+    </div>
+  </aside>
+
+  <!-- Chat Area -->
+  <main class="chat-area">
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">🤖</div>
+        <h2>ONLINE</h2>
+        <p>Your local AI companion. Everything runs on your machine — no data leaves your network. Select a personality and start chatting.</p>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <!-- Quant command bar -->
+      <div class="quant-bar" id="quantBar">
+        <button class="quant-cmd-btn" onclick="runSlash('/market')">📊 Market</button>
+        <button class="quant-cmd-btn" onclick="promptSlash('/quote ')">💹 Quote</button>
+        <button class="quant-cmd-btn" onclick="promptSlash('/analyze ')">🧠 Analyze</button>
+        <button class="quant-cmd-btn" onclick="promptSlash('/chart ')">📈 Chart</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/momentum')">🚀 Momentum</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/dislocate')">🔍 Value</button>
+        <button class="quant-cmd-btn" onclick="promptSlash('/backtest ')">📊 Backtest</button>
+        <button class="quant-cmd-btn" onclick="promptSlash('/sentiment ')">📰 Sentiment</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/moonshot')">🌙 Moonshot</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/help')">❓ Help</button>
+      </div>
+      <div class="input-row">
+        <div class="input-wrapper">
+          <textarea
+            id="chatInput"
+            placeholder="Type a message..."
+            rows="1"
+          ></textarea>
+        </div>
+        <button class="send-btn" id="sendBtn" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+      <div class="input-hints">
+        <span class="input-hint"><kbd>Enter</kbd> send</span>
+        <span class="input-hint"><kbd>Shift+Enter</kbd> new line</span>
+        <span class="input-hint">Say "remember that..." to save memories</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+//  AI COMPANION — Client
+// ══════════════════════════════════════════
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+const state = {
+  ws: null,
+  connected: false,
+  streaming: false,
+  personality: 'default',
+  personalities: {},
+  streamBuffer: '',
+};
+
+// ── WebSocket Connection ──
+
+function connect() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  state.ws = new WebSocket(`${protocol}//${location.host}`);
+
+  state.ws.onopen = () => {
+    state.connected = true;
+    setStatus('connected', 'ONLINE');
+    $('#sendBtn').disabled = false;
+    loadPersonalities();
+    loadMemories();
+    loadStats();
+  };
+
+  state.ws.onclose = () => {
+    state.connected = false;
+    setStatus('disconnected', 'OFFLINE');
+    $('#sendBtn').disabled = true;
+    setTimeout(connect, 3000);
+  };
+
+  state.ws.onerror = () => {
+    setStatus('disconnected', 'ERROR');
+  };
+
+  state.ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    handleMessage(msg);
+  };
+}
+
+function send(type, data = {}) {
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type, ...data }));
+  }
+}
+
+// ── Message Handlers ──
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'stream_start':
+      state.streaming = true;
+      state.streamBuffer = '';
+      addMessage('assistant', '', true);
+      break;
+
+    case 'stream_token':
+      state.streamBuffer += msg.content;
+      updateStreamingMessage(state.streamBuffer);
+      break;
+
+    case 'stream_end':
+      state.streaming = false;
+      finalizeStreamingMessage(msg.full_content);
+      break;
+
+    case 'personality_changed':
+      updateTheme(msg.style);
+      addSystemMessage(`Personality switched to ${state.personalities[msg.personality]?.name || msg.personality}`);
+      if (msg.greeting) {
+        addMessage('assistant', msg.greeting);
+      }
+      break;
+
+    case 'memory_saved':
+    case 'memory_auto_saved':
+      const label = msg.updated ? 'Memory updated' : 'Memory saved';
+      showMemoryToast(label, msg.content);
+      loadMemories();
+      break;
+
+    case 'command_result':
+      showCommandResult(msg);
+      break;
+
+    case 'slash_result':
+      addMessage('assistant', msg.content);
+      break;
+
+    case 'system_msg':
+      addSystemMessage(msg.content);
+      break;
+
+    case 'chart_data':
+      if (msg.data && !msg.data.error) {
+        renderChart(msg.data);
+      }
+      break;
+
+    case 'error':
+      addMessage('assistant', `⚠ ${msg.content}`);
+      state.streaming = false;
+      break;
+
+    case 'history':
+      if (msg.messages?.length) {
+        $('#messages').innerHTML = '';
+        msg.messages.forEach(m => addMessage(m.role, m.content));
+      }
+      break;
+  }
+}
+
+// ── UI Functions ──
+
+function setStatus(status, text) {
+  const dot = $('#statusDot');
+  dot.className = `status-dot ${status === 'connected' ? '' : status}`;
+  $('#statusText').textContent = text;
+}
+
+function addMessage(role, content, isStreaming = false) {
+  // Remove welcome screen
+  const welcome = $('#welcome');
+  if (welcome) welcome.remove();
+
+  const messages = $('#messages');
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  if (isStreaming) div.id = 'streaming-message';
+
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const roleName = role === 'user' ? 'YOU' : (state.personalities[state.personality]?.name?.toUpperCase() || 'AI');
+
+  div.innerHTML = `
+    <div class="msg-header">
+      <span class="msg-role">${roleName}</span>
+      <span class="msg-time">${time}</span>
+    </div>
+    <div class="msg-content${isStreaming ? ' streaming-cursor' : ''}">${isStreaming ? '' : formatContent(content)}</div>
+  `;
+
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function updateStreamingMessage(content) {
+  const msg = $('#streaming-message');
+  if (msg) {
+    msg.querySelector('.msg-content').innerHTML = formatContent(content);
+    $('#messages').scrollTop = $('#messages').scrollHeight;
+  }
+}
+
+function finalizeStreamingMessage(fullContent) {
+  const msg = $('#streaming-message');
+  if (msg) {
+    msg.removeAttribute('id');
+    const contentEl = msg.querySelector('.msg-content');
+    contentEl.classList.remove('streaming-cursor');
+    contentEl.innerHTML = formatContent(fullContent);
+    $('#messages').scrollTop = $('#messages').scrollHeight;
+  }
+}
+
+function addSystemMessage(text) {
+  const messages = $('#messages');
+  const div = document.createElement('div');
+  div.className = 'message system';
+  div.innerHTML = `<div class="msg-content">${text}</div>`;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function showMemoryToast(label, content) {
+  const messages = $('#messages');
+  const div = document.createElement('div');
+  div.className = 'memory-toast';
+  div.innerHTML = `🧠 ${label}: "${content}"`;
+  const lastMsg = messages.lastElementChild;
+  if (lastMsg) lastMsg.appendChild(div);
+}
+
+function showCommandResult(msg) {
+  const messages = $('#messages');
+  const div = document.createElement('div');
+  div.className = `command-result ${msg.success ? '' : 'error'}`;
+  div.innerHTML = `⚡ [${msg.action}] ${msg.result}`;
+  const lastMsg = messages.lastElementChild;
+  if (lastMsg) lastMsg.appendChild(div);
+}
+
+function formatContent(text) {
+  // Basic markdown-like formatting
+  return text
+    // Code blocks
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Italic
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Line breaks
+    .replace(/\n/g, '<br>');
+}
+
+// ── Personality Management ──
+
+async function loadPersonalities() {
+  try {
+    const res = await fetch('/api/personalities');
+    const list = await res.json();
+    state.personalities = {};
+    const container = $('#personalityList');
+    container.innerHTML = '';
+
+    list.forEach(p => {
+      state.personalities[p.id] = p;
+      const btn = document.createElement('button');
+      btn.className = `personality-btn ${p.id === state.personality ? 'active' : ''}`;
+      btn.dataset.id = p.id;
+      btn.innerHTML = `
+        <span class="p-icon">${p.icon}</span>
+        <span class="p-name">${p.name}</span>
+      `;
+      btn.onclick = () => selectPersonality(p.id);
+      container.appendChild(btn);
+    });
+  } catch (err) {
+    console.error('Failed to load personalities:', err);
+  }
+}
+
+function selectPersonality(id) {
+  state.personality = id;
+  $$('.personality-btn').forEach(b => b.classList.toggle('active', b.dataset.id === id));
+  send('set_personality', { personality: id });
+}
+
+function updateTheme(style) {
+  if (!style) return;
+  const root = document.documentElement;
+  if (style.accent_color) {
+    root.style.setProperty('--accent', style.accent_color);
+    root.style.setProperty('--accent-dim', style.accent_color + '33');
+    root.style.setProperty('--accent-glow', style.accent_color + '88');
+  }
+  if (style.glow_intensity) {
+    root.style.setProperty('--glow-intensity', style.glow_intensity);
+  }
+}
+
+// ── Memory Management ──
+
+async function loadMemories() {
+  try {
+    const res = await fetch('/api/memories');
+    const memories = await res.json();
+    const container = $('#memoryList');
+
+    if (memories.length === 0) {
+      container.innerHTML = '<div style="font-size:11px; color:var(--text-muted); padding:8px;">No memories yet</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    memories.slice(0, 15).forEach(mem => {
+      const div = document.createElement('div');
+      div.className = 'memory-item';
+      div.innerHTML = `
+        <div class="mem-category">${mem.category}</div>
+        ${mem.content}
+        <button class="mem-delete" onclick="deleteMemory(${mem.id})" title="Forget">×</button>
+      `;
+      container.appendChild(div);
+    });
+  } catch (err) {
+    console.error('Failed to load memories:', err);
+  }
+}
+
+async function deleteMemory(id) {
+  await fetch(`/api/memories/${id}`, { method: 'DELETE' });
+  loadMemories();
+}
+
+// ── Stats ──
+
+async function loadStats() {
+  try {
+    const res = await fetch('/api/stats');
+    const stats = await res.json();
+    $('#statsDisplay').textContent = 
+      `${stats.memories} memories · ${stats.sessions} sessions`;
+  } catch {}
+}
+
+// ── Input Handling ──
+
+const chatInput = $('#chatInput');
+const sendBtn = $('#sendBtn');
+
+chatInput.addEventListener('input', () => {
+  // Auto-resize
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 200) + 'px';
+  sendBtn.disabled = !chatInput.value.trim() || state.streaming;
+});
+
+chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+sendBtn.addEventListener('click', sendMessage);
+
+function sendMessage() {
+  const content = chatInput.value.trim();
+  if (!content || state.streaming || !state.connected) return;
+
+  addMessage('user', content);
+  send('chat', { content });
+
+  chatInput.value = '';
+  chatInput.style.height = 'auto';
+  sendBtn.disabled = true;
+}
+
+// ── New Session ──
+
+$('#newSessionBtn').addEventListener('click', () => {
+  send('set_session', { session_id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` });
+  $('#messages').innerHTML = `
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">🤖</div>
+      <h2>NEW SESSION</h2>
+      <p>Fresh start. Your memories persist across sessions.</p>
+    </div>
+  `;
+  loadStats();
+});
+
+// ── Boot ──
+
+connect();
+
+// Refresh memories periodically
+setInterval(loadMemories, 30000);
+setInterval(loadStats, 60000);
+
+// ── Slash Command Helpers ──
+
+function runSlash(cmd) {
+  if (!state.connected) return;
+  addMessage('user', cmd);
+  send('chat', { content: cmd });
+}
+
+function promptSlash(prefix) {
+  const input = $('#chatInput');
+  input.value = prefix;
+  input.focus();
+}
+
+// ── Chart Rendering (Canvas) ──
+
+function renderChart(chartData) {
+  // Remove existing chart panel
+  const existing = document.querySelector('.chart-panel');
+  if (existing) existing.remove();
+
+  const messages = $('#messages');
+  const panel = document.createElement('div');
+  panel.className = 'chart-panel visible';
+  panel.innerHTML = `
+    <div class="chart-header">
+      <span class="chart-title">📈 ${chartData.ticker} — ${chartData.range.toUpperCase()}</span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div class="chart-controls">
+          ${['1mo','3mo','6mo','1y','2y'].map(r =>
+            `<button class="chart-range-btn ${r === chartData.range ? 'active' : ''}"
+              onclick="loadChartRange('${chartData.ticker}','${r}')">${r}</button>`
+          ).join('')}
+        </div>
+        <button class="chart-close-btn" onclick="this.closest('.chart-panel').remove()">✕</button>
+      </div>
+    </div>
+    <div class="chart-canvas-wrap">
+      <canvas id="stockChart"></canvas>
+    </div>
+    <div class="chart-stats" id="chartStats"></div>
+  `;
+  messages.appendChild(panel);
+  messages.scrollTop = messages.scrollHeight;
+
+  // Draw on canvas
+  const canvas = document.getElementById('stockChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+
+  const closes = chartData.close;
+  const sma50 = chartData.sma50;
+  const sma200 = chartData.sma200;
+  const volumes = chartData.volume;
+  const rsi = chartData.rsi;
+  const n = closes.length;
+
+  if (n < 2) return;
+
+  // Layout: price area (top 65%), volume (15%), RSI (20%)
+  const priceH = H * 0.60;
+  const volH = H * 0.15;
+  const rsiH = H * 0.20;
+  const gap = H * 0.025;
+  const volTop = priceH + gap;
+  const rsiTop = volTop + volH + gap;
+  const pad = { left: 0, right: 0 };
+
+  // Price scaling
+  const validCloses = closes.filter(v => v != null);
+  const minP = Math.min(...validCloses) * 0.98;
+  const maxP = Math.max(...validCloses) * 1.02;
+  const scaleX = (i) => pad.left + (i / (n - 1)) * (W - pad.left - pad.right);
+  const scaleY = (v) => priceH - ((v - minP) / (maxP - minP)) * priceH;
+
+  // Background
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg-deep').trim();
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < 5; i++) {
+    const y = (priceH / 4) * i;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Draw price line
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  let started = false;
+  for (let i = 0; i < n; i++) {
+    if (closes[i] == null) continue;
+    const x = scaleX(i), y = scaleY(closes[i]);
+    if (!started) { ctx.moveTo(x, y); started = true; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Price gradient fill
+  const gradient = ctx.createLinearGradient(0, 0, 0, priceH);
+  gradient.addColorStop(0, accentColor + '30');
+  gradient.addColorStop(1, accentColor + '00');
+  ctx.lineTo(scaleX(n - 1), priceH);
+  ctx.lineTo(scaleX(0), priceH);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // SMA50
+  if (sma50) {
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 2]);
+    ctx.beginPath();
+    let s = false;
+    for (let i = 0; i < n; i++) {
+      if (sma50[i] == null) continue;
+      const x = scaleX(i), y = scaleY(sma50[i]);
+      if (!s) { ctx.moveTo(x, y); s = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // SMA200
+  if (sma200) {
+    ctx.strokeStyle = '#ec4899';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 2]);
+    ctx.beginPath();
+    let s = false;
+    for (let i = 0; i < n; i++) {
+      if (sma200[i] == null) continue;
+      const x = scaleX(i), y = scaleY(sma200[i]);
+      if (!s) { ctx.moveTo(x, y); s = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Volume bars
+  if (volumes) {
+    const maxVol = Math.max(...volumes.filter(v => v != null && v > 0));
+    for (let i = 0; i < n; i++) {
+      if (!volumes[i]) continue;
+      const x = scaleX(i);
+      const barH = (volumes[i] / maxVol) * volH;
+      const color = i > 0 && closes[i] >= closes[i - 1] ? '#00ff8840' : '#ff336640';
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 1, volTop + volH - barH, 2.5, barH);
+    }
+  }
+
+  // RSI
+  if (rsi) {
+    const rsiScaleY = (v) => rsiTop + rsiH - ((v / 100) * rsiH);
+
+    // RSI zones
+    ctx.fillStyle = '#ff336610';
+    ctx.fillRect(0, rsiTop, W, rsiScaleY(70) - rsiTop);
+    ctx.fillStyle = '#00ff8810';
+    ctx.fillRect(0, rsiScaleY(30), W, rsiTop + rsiH - rsiScaleY(30));
+
+    // RSI 70/30 lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath(); ctx.moveTo(0, rsiScaleY(70)); ctx.lineTo(W, rsiScaleY(70)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, rsiScaleY(30)); ctx.lineTo(W, rsiScaleY(30)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // RSI line
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    let s = false;
+    for (let i = 0; i < n; i++) {
+      if (rsi[i] == null) continue;
+      const x = scaleX(i), y = rsiScaleY(rsi[i]);
+      if (!s) { ctx.moveTo(x, y); s = true; } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Price label
+  const lastPrice = closes[n - 1];
+  const prevPrice = closes[0];
+  const changePct = ((lastPrice - prevPrice) / prevPrice * 100).toFixed(2);
+
+  ctx.font = '11px JetBrains Mono';
+  ctx.fillStyle = '#e0e0ec';
+  ctx.fillText(`$${lastPrice.toFixed(2)}`, 6, 14);
+  ctx.fillStyle = changePct >= 0 ? '#00ff88' : '#ff3366';
+  ctx.fillText(`${changePct >= 0 ? '+' : ''}${changePct}%`, 6 + ctx.measureText(`$${lastPrice.toFixed(2)} `).width + 4, 14);
+
+  // Legend
+  ctx.font = '9px JetBrains Mono';
+  const legendY = 28;
+  ctx.fillStyle = accentColor; ctx.fillText('● Price', 6, legendY);
+  ctx.fillStyle = '#3b82f6'; ctx.fillText('-- SMA50', 60, legendY);
+  ctx.fillStyle = '#ec4899'; ctx.fillText('-- SMA200', 120, legendY);
+  ctx.fillStyle = '#f59e0b'; ctx.fillText('● RSI', 190, legendY);
+
+  // Stats bar
+  const statsEl = document.getElementById('chartStats');
+  if (statsEl) {
+    const lastRSI = rsi?.filter(v => v != null).pop();
+    const lastSMA50 = sma50?.filter(v => v != null).pop();
+    const vol = volumes?.[n - 1];
+    statsEl.innerHTML = `
+      <span class="chart-stat"><span class="stat-label">Close:</span> $${lastPrice.toFixed(2)}</span>
+      <span class="chart-stat"><span class="stat-label">Change:</span> <span class="stat-${changePct >= 0 ? 'up' : 'down'}">${changePct >= 0 ? '+' : ''}${changePct}%</span></span>
+      ${lastRSI ? `<span class="chart-stat"><span class="stat-label">RSI:</span> ${lastRSI.toFixed(1)}</span>` : ''}
+      ${lastSMA50 ? `<span class="chart-stat"><span class="stat-label">SMA50:</span> $${lastSMA50.toFixed(2)}</span>` : ''}
+      ${vol ? `<span class="chart-stat"><span class="stat-label">Vol:</span> ${(vol / 1e6).toFixed(1)}M</span>` : ''}
+      <span class="chart-stat"><span class="stat-label">Bars:</span> ${n}</span>
+    `;
+  }
+}
+
+function loadChartRange(ticker, range) {
+  send('chat', { content: `/chart ${ticker} ${range}` });
+}
+</script>
+</body>
+</html>
