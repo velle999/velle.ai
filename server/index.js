@@ -1316,14 +1316,20 @@ Use this data in your response. If the user wants deeper analysis, suggest they 
   }
 
   // Build messages array
+  const personalityReminder = personality.reminder || '';
   const messages = [
     {
       role: 'system',
       content: personality.system_prompt + memorySection + advancedContext + quantContext + commandSection
     },
     ...context.history,
-    { role: 'user', content: userMessage }
   ];
+
+  // Inject personality reminder right before user message so model can't ignore it
+  if (personalityReminder) {
+    messages.push({ role: 'system', content: personalityReminder });
+  }
+  messages.push({ role: 'user', content: userMessage });
 
   // Save user message
   memory.saveMessage(sessionId, 'user', userMessage, personalityId);
