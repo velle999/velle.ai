@@ -77,6 +77,14 @@ const briefing = new BriefingEngine(memory.db);
 reminders.startAll();
 reminders.startPeriodicCheck();
 
+// Inject engines into command executor so LLM-triggered actions work
+commander.handlers._reminderEngine = reminders;
+commander.handlers._todoManager = todos;
+commander.handlers._habitTracker = habits;
+commander.handlers._goalTracker = goals;
+commander.handlers._bookmarks = bookmarks;
+commander.handlers._knowledgeBase = kb;
+
 const TYPE_ICONS = { note: '📝', snippet: '💻', link: '🔗', reference: '📚' };
 
 // Load personality profiles
@@ -1243,6 +1251,8 @@ Available actions: ${commander.getAvailableCommands().join(', ')}
 Examples:
 {"action": "open_browser", "url": "https://google.com"}
 {"action": "open_app", "app": "powershell"}
+{"action": "run_shell", "command": "Get-Process | Select -First 10"}
+{"action": "set_reminder", "message": "Check email", "time": "in 10 minutes"}
 {"action": "stock_quote", "ticker": "NVDA"}
 {"action": "stock_analyze", "ticker": "AAPL"}
 {"action": "market_snapshot"}
@@ -1250,16 +1260,25 @@ Examples:
 {"action": "sentiment", "ticker": "TSLA"}
 {"action": "backtest", "ticker": "AMD"}
 {"action": "moonshot_scan"}
-{"action": "run_shell", "command": "Get-Process | Select -First 10"}
-{"action": "run_shell", "command": "ipconfig"}
-{"action": "run_shell", "command": "Get-Date"}
+{"action": "add_todo", "content": "Buy groceries", "priority": 1, "project": "personal"}
+{"action": "complete_todo", "id": 5}
+{"action": "add_habit", "name": "Exercise"}
+{"action": "check_habit", "id": 1}
+{"action": "add_goal", "title": "Learn Rust"}
+{"action": "save_bookmark", "content": "important info", "tags": "work,reference"}
+{"action": "save_knowledge", "title": "API Key", "content": "sk-abc123", "type": "snippet"}
 
 IMPORTANT for run_shell:
 - This system runs Windows with PowerShell. Use PowerShell/Windows commands, NOT bash/Linux.
 - If the user says "run shell" or "run a command" without specifying what, ASK them what command they want to run. Do NOT guess.
-- Only output a command JSON when you know the specific command to execute.
-- Valid examples: dir, ipconfig, Get-Process, Get-Date, systeminfo, hostname, tasklist, whoami, Get-ChildItem, ping
-- NEVER use: rm, del, format, shutdown, restart, kill, Remove-Item, or any destructive commands.`;
+- Valid examples: dir, ipconfig, Get-Process, Get-Date, systeminfo, hostname, tasklist, whoami
+- NEVER use: rm, del, format, shutdown, restart, kill, Remove-Item, or any destructive commands.
+
+IMPORTANT for set_reminder:
+- Always include "message" and "time" fields.
+- Time formats: "in 5 minutes", "in 1 hour", "at 3:00pm", "tomorrow"
+
+For productivity features (todos, habits, goals, bookmarks, knowledge base), prefer using the slash command system (user types /todo, /habit, etc.) but you CAN also trigger them via JSON actions.`;
 
   // If this is Kabuneko personality or user mentions stocks, enrich with market context
   let quantContext = '';

@@ -126,12 +126,21 @@ const COMMAND_HANDLERS = {
   },
 
   set_reminder: async (params) => {
-    // Store reminder — in MVP, just log it. Upgrade to system notifications later.
-    return { 
-      success: true, 
-      result: `Reminder set: "${params.text}" at ${params.time || 'unspecified time'}`,
-      data: { text: params.text, time: params.time }
-    };
+    const text = params.text || params.message || params.content || params.reminder || 'Reminder';
+    const timeStr = params.time || params.due_at || params.when || 'in 5 minutes';
+
+    // If a real reminder engine is injected, use it
+    if (COMMAND_HANDLERS._reminderEngine) {
+      const { parseReminderTime, parseRepeat } = await import('./advanced.js');
+      const dueAt = parseReminderTime(timeStr) || parseReminderTime(`in ${timeStr}`);
+      if (dueAt) {
+        const repeat = parseRepeat(timeStr);
+        const rem = COMMAND_HANDLERS._reminderEngine.add(text, dueAt, repeat);
+        return { success: true, result: `⏰ Reminder set: "${rem.content}" — ${rem.due_at}${rem.repeat ? ` (${rem.repeat})` : ''}` };
+      }
+    }
+
+    return { success: true, result: `⏰ Reminder set: "${text}" at ${timeStr}` };
   },
 
   system_info: async () => {
@@ -172,7 +181,60 @@ const COMMAND_HANDLERS = {
       const output = (err.stdout || err.stderr || err.message || '').trim();
       return { success: false, result: `Error: ${output}` };
     }
-  }
+  },
+
+  // ═══════════════════════════════════
+  //  PRODUCTIVITY COMMANDS (LLM-triggered)
+  // ═══════════════════════════════════
+
+  add_todo: async (params) => {
+    if (!COMMAND_HANDLERS._todoManager) return { success: false, result: 'Todo system not initialized' };
+    const t = COMMAND_HANDLERS._todoManager.add(
+      params.content || params.text || params.task,
+      params.project || 'inbox',
+      params.priority || 2,
+      params.due_date || params.due || null,
+      params.tags || null
+    );
+    return { success: true, result: `✅ Task added: #${t.id} ${t.content}` };
+  },
+
+  complete_todo: async (params) => {
+    if (!COMMAND_HANDLERS._todoManager) return { success: false, result: 'Todo system not initialized' };
+    const id = params.id || params.task_id;
+    const t = COMMAND_HANDLERS._todoManager.complete(id);
+    return { success: true, result: t ? `✅ Completed: #${t.id} ${t.content}` : '⚠ Task not found' };
+  },
+
+  add_habit: async (params) => {
+    if (!COMMAND_HANDLERS._habitTracker) return { success: false, result: 'Habit system not initialized' };
+    const h = COMMAND_HANDLERS._habitTracker.addHabit(params.name || params.habit, params.icon || '✅');
+    return { success: true, result: `🔄 Habit created: ${h.name}` };
+  },
+
+  check_habit: async (params) => {
+    if (!COMMAND_HANDLERS._habitTracker) return { success: false, result: 'Habit system not initialized' };
+    const r = COMMAND_HANDLERS._habitTracker.checkIn(params.id || params.habit_id);
+    return { success: true, result: r.checked ? `✅ Checked in!` : '⚠ Already checked today' };
+  },
+
+  add_goal: async (params) => {
+    if (!COMMAND_HANDLERS._goalTracker) return { success: false, result: 'Goal system not initialized' };
+    const g = COMMAND_HANDLERS._goalTracker.addGoal(params.title || params.goal, params.description);
+    return { success: true, result: `🎯 Goal set: #${g.id} ${g.title}` };
+  },
+
+  save_bookmark: async (params) => {
+    if (!COMMAND_HANDLERS._bookmarks) return { success: false, result: 'Bookmark system not initialized' };
+    const b = COMMAND_HANDLERS._bookmarks.save(params.content || params.text, params.note, params.tags);
+    return { success: true, result: `🔖 Bookmarked: #${b.id}` };
+  },
+
+  save_knowledge: async (params) => {
+    if (!COMMAND_HANDLERS._knowledgeBase) return { success: false, result: 'KB not initialized' };
+    const item = COMMAND_HANDLERS._knowledgeBase.add(params.title, params.content, params.type || 'note', params.language, params.tags);
+    return { success: true, result: `📚 Saved: #${item.id} ${item.title}` };
+  },
 };
 
 export class CommandExecutor {
