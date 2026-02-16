@@ -440,6 +440,4 @@ Zero external AI APIs. Zero telemetry. Everything local.
 
 ---
 
-## License
 
-MIT
