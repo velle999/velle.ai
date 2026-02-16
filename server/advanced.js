@@ -5,6 +5,7 @@
 //  • Daily conversation summaries
 //  • Auto-tagging memories with categories
 //  • Local file search assistant
+//  • Personal journal with prompts, streaks & reflection
 // ═══════════════════════════════════════════════════════════════
 
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
@@ -716,3 +717,322 @@ export function formatFileResults(results, query) {
 
   return text;
 }
+
+
+// ═══════════════════════════════════
+//  6. PERSONAL JOURNAL
+// ═══════════════════════════════════
+
+const JOURNAL_PROMPTS = [
+  "What's one thing you accomplished today, no matter how small?",
+  "What's taking up the most mental space right now?",
+  "Describe your energy level today in one word. Why?",
+  "What are you grateful for today?",
+  "What would make tomorrow better than today?",
+  "What's something you learned recently?",
+  "If today had a title, what would it be?",
+  "What's one thing you'd tell your past self from a week ago?",
+  "What's a problem you're stuck on? Write it out.",
+  "Rate your day 1-10. What would bump it up one point?",
+  "What did you spend the most time on today? Was it worth it?",
+  "Who had the biggest impact on your day?",
+  "What's something you've been putting off?",
+  "Write one sentence about how you're really feeling right now.",
+  "What's a win you haven't celebrated yet?",
+  "What drained your energy today? What charged it?",
+  "If you could redo one thing today, what would it be?",
+  "What's exciting you about the future right now?",
+  "What habit are you trying to build or break?",
+  "Describe your mood in three emojis. Then explain why.",
+  "What's one thing you want to remember about today?",
+  "What would your ideal tomorrow look like?",
+  "What's the bravest thing you did today?",
+  "Write a quick note to your future self reading this.",
+  "What pattern are you noticing in your life lately?",
+  "What are you avoiding? Why?",
+  "What brought you joy today, even briefly?",
+  "What's one thing you're proud of this week?",
+  "If your week was a movie, what genre would it be?",
+  "What do you need more of in your life right now?",
+];
+
+export class JournalEngine {
+  constructor(db) {
+    this.db = db;
+    this._initTable();
+  }
+
+  _initTable() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS journal (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content TEXT NOT NULL,
+        prompt TEXT,
+        mood_score REAL,
+        mood_label TEXT,
+        tags TEXT,
+        pinned INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT (datetime('now','localtime'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_journal_date ON journal(created_at);
+      CREATE INDEX IF NOT EXISTS idx_journal_pinned ON journal(pinned);
+    `);
+  }
+
+  // Write a new entry
+  write(content, prompt = null, moodScore = null, moodLabel = null) {
+    const tags = this._autoTag(content).join(',');
+    const stmt = this.db.prepare(`
+      INSERT INTO journal (content, prompt, mood_score, mood_label, tags)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(content, prompt, moodScore, moodLabel, tags);
+    return {
+      id: result.lastInsertRowid,
+      content, prompt, mood_score: moodScore, mood_label: moodLabel, tags,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  // Get a random writing prompt
+  getPrompt() {
+    // Try to avoid recently used prompts
+    const recent = this.db.prepare(`
+      SELECT prompt FROM journal
+      WHERE prompt IS NOT NULL
+      ORDER BY created_at DESC LIMIT 10
+    `).all().map(r => r.prompt);
+
+    const unused = JOURNAL_PROMPTS.filter(p => !recent.includes(p));
+    const pool = unused.length ? unused : JOURNAL_PROMPTS;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // Get entries for a date range
+  getEntries(days = 7) {
+    return this.db.prepare(`
+      SELECT * FROM journal
+      WHERE created_at >= datetime('now','localtime','-${days} days')
+      ORDER BY created_at DESC
+    `).all();
+  }
+
+  // Get today's entries
+  getToday() {
+    return this.db.prepare(`
+      SELECT * FROM journal
+      WHERE date(created_at) = date('now','localtime')
+      ORDER BY created_at DESC
+    `).all();
+  }
+
+  // Get single entry
+  getEntry(id) {
+    return this.db.prepare('SELECT * FROM journal WHERE id = ?').get(id);
+  }
+
+  // Edit an entry
+  edit(id, content) {
+    const tags = this._autoTag(content).join(',');
+    this.db.prepare('UPDATE journal SET content = ?, tags = ? WHERE id = ?').run(content, tags, id);
+    return this.getEntry(id);
+  }
+
+  // Delete entry
+  delete(id) {
+    this.db.prepare('DELETE FROM journal WHERE id = ?').run(id);
+    return { deleted: true, id };
+  }
+
+  // Pin/unpin
+  togglePin(id) {
+    const entry = this.getEntry(id);
+    if (!entry) return null;
+    const newVal = entry.pinned ? 0 : 1;
+    this.db.prepare('UPDATE journal SET pinned = ? WHERE id = ?').run(newVal, id);
+    return { id, pinned: !!newVal };
+  }
+
+  // Get pinned entries
+  getPinned() {
+    return this.db.prepare('SELECT * FROM journal WHERE pinned = 1 ORDER BY created_at DESC').all();
+  }
+
+  // Search entries
+  search(query) {
+    const keywords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    if (!keywords.length) return [];
+    const conditions = keywords.map(() => 'LOWER(content) LIKE ?').join(' OR ');
+    const params = keywords.map(k => `%${k}%`);
+    return this.db.prepare(`
+      SELECT * FROM journal WHERE ${conditions}
+      ORDER BY created_at DESC LIMIT 20
+    `).all(...params);
+  }
+
+  // Streak calculation
+  getStreak() {
+    const days = this.db.prepare(`
+      SELECT DISTINCT date(created_at) as day FROM journal
+      ORDER BY day DESC LIMIT 365
+    `).all().map(r => r.day);
+
+    if (!days.length) return { current: 0, longest: 0, total_entries: 0, total_days: 0 };
+
+    const today = new Date().toISOString().slice(0, 10);
+    let current = 0;
+    let longest = 0;
+    let streak = 0;
+    let prevDate = null;
+
+    for (const day of days) {
+      if (!prevDate) {
+        // First entry — check if it's today or yesterday
+        if (day === today || day === this._yesterday()) {
+          streak = 1;
+        } else {
+          break; // Current streak is 0
+        }
+      } else {
+        const diff = this._dayDiff(day, prevDate);
+        if (diff === 1) {
+          streak++;
+        } else {
+          break;
+        }
+      }
+      prevDate = day;
+    }
+    current = streak;
+
+    // Calculate longest streak
+    streak = 1;
+    for (let i = 1; i < days.length; i++) {
+      if (this._dayDiff(days[i], days[i - 1]) === 1) {
+        streak++;
+      } else {
+        longest = Math.max(longest, streak);
+        streak = 1;
+      }
+    }
+    longest = Math.max(longest, streak, current);
+
+    const totalEntries = this.db.prepare('SELECT COUNT(*) as c FROM journal').get().c;
+
+    return { current, longest, total_entries: totalEntries, total_days: days.length };
+  }
+
+  // Weekly reflection data
+  getWeeklyReflection() {
+    const entries = this.getEntries(7);
+    if (!entries.length) return null;
+
+    const moodScores = entries.filter(e => e.mood_score != null).map(e => e.mood_score);
+    const avgMood = moodScores.length ? moodScores.reduce((a, b) => a + b, 0) / moodScores.length : null;
+
+    // Tag frequency
+    const tagCounts = {};
+    for (const e of entries) {
+      if (e.tags) {
+        for (const t of e.tags.split(',')) {
+          const tag = t.trim();
+          if (tag) tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        }
+      }
+    }
+    const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+    // Word count
+    const totalWords = entries.reduce((sum, e) => sum + e.content.split(/\s+/).length, 0);
+
+    return {
+      entries: entries.length,
+      avg_mood: avgMood ? +avgMood.toFixed(2) : null,
+      top_tags: topTags,
+      total_words: totalWords,
+      pinned: entries.filter(e => e.pinned).length,
+    };
+  }
+
+  _autoTag(content) {
+    const lower = content.toLowerCase();
+    const tags = [];
+    const rules = {
+      'work':     /work|job|meeting|deadline|project|client|boss|team|sprint|office/,
+      'code':     /code|bug|deploy|git|api|server|function|programming|debug/,
+      'health':   /health|workout|exercise|sleep|tired|sick|run|gym|diet|meditation/,
+      'money':    /money|pay|bill|budget|invest|save|spend|income|expense|stock/,
+      'social':   /friend|family|date|party|dinner|hangout|call|text|relationship/,
+      'learning': /learn|read|study|course|tutorial|book|skill|practice/,
+      'creative': /write|draw|design|music|art|build|create|idea|brainstorm/,
+      'mood':     /happy|sad|anxious|stressed|grateful|frustrated|excited|calm|angry/,
+      'goal':     /goal|plan|want|hope|dream|resolution|habit|milestone/,
+      'travel':   /travel|trip|flight|hotel|vacation|explore|visit/,
+    };
+    for (const [tag, pattern] of Object.entries(rules)) {
+      if (pattern.test(lower)) tags.push(tag);
+    }
+    return tags.length ? tags : ['general'];
+  }
+
+  _yesterday() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  _dayDiff(older, newer) {
+    return Math.round((new Date(newer) - new Date(older)) / 86400000);
+  }
+}
+
+export function formatJournalEntry(entry) {
+  const date = new Date(entry.created_at).toLocaleString();
+  const pin = entry.pinned ? ' 📌' : '';
+  const tags = entry.tags ? ` [${entry.tags}]` : '';
+  const mood = entry.mood_label ? ` — ${entry.mood_label}` : '';
+  let text = `**#${entry.id}**${pin} — ${date}${mood}${tags}\n`;
+  if (entry.prompt) text += `_Prompt: ${entry.prompt}_\n`;
+  text += entry.content;
+  return text;
+}
+
+export function formatJournalList(entries) {
+  if (!entries.length) return '📓 No journal entries yet. Try `/journal write` to start.';
+  let text = `📓 **Journal** (${entries.length} entries)\n\n`;
+  for (const e of entries.slice(0, 10)) {
+    const date = new Date(e.created_at).toLocaleDateString();
+    const pin = e.pinned ? '📌 ' : '';
+    const preview = e.content.substring(0, 80).replace(/\n/g, ' ');
+    const mood = e.mood_label ? ` ${e.mood_label}` : '';
+    text += `${pin}**#${e.id}** ${date}${mood} — ${preview}${e.content.length > 80 ? '...' : ''}\n`;
+  }
+  if (entries.length > 10) text += `\n_...and ${entries.length - 10} more_`;
+  return text;
+}
+
+export function formatStreak(streak) {
+  const fire = streak.current > 0 ? '🔥'.repeat(Math.min(streak.current, 7)) : '❄️';
+  let text = `**📓 Journal Streak**\n\n`;
+  text += `${fire} Current: **${streak.current} day${streak.current !== 1 ? 's' : ''}**\n`;
+  text += `🏆 Longest: **${streak.longest} day${streak.longest !== 1 ? 's' : ''}**\n`;
+  text += `📝 Total entries: **${streak.total_entries}**\n`;
+  text += `📅 Days journaled: **${streak.total_days}**`;
+  return text;
+}
+
+export function formatWeeklyReflection(ref) {
+  if (!ref) return '📊 No entries this week to reflect on.';
+  let text = `**📊 Weekly Reflection**\n\n`;
+  text += `📝 Entries: **${ref.entries}** | Words: **${ref.total_words}** | Pinned: **${ref.pinned}**\n`;
+  if (ref.avg_mood != null) {
+    const emoji = ref.avg_mood >= 0.3 ? '😊' : ref.avg_mood >= -0.1 ? '😐' : '😔';
+    text += `${emoji} Avg mood: **${ref.avg_mood}**\n`;
+  }
+  if (ref.top_tags.length) {
+    text += `🏷️ Top themes: ${ref.top_tags.map(([t, c]) => `**${t}** (${c})`).join(', ')}\n`;
+  }
+  return text;
+}
+
+export { JOURNAL_PROMPTS };

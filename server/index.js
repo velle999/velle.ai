@@ -12,7 +12,19 @@ import {
   SummaryEngine,
   autoTagMemory, autoImportance,
   FileSearchEngine, formatFileResults,
+  JournalEngine, formatJournalEntry, formatJournalList, formatStreak, formatWeeklyReflection,
 } from './advanced.js';
+import {
+  TodoManager, formatTodo, formatTodoList,
+  HabitTracker, formatHabitDashboard,
+  PomodoroEngine,
+  GoalTracker, formatGoal, formatGoalList,
+  BookmarkManager, formatBookmarkList,
+  KnowledgeBase, formatKBList,
+  AchievementEngine, formatAchievements,
+  InsightEngine, formatInsights,
+  BriefingEngine,
+} from './productivity.js';
 import {
   getMarketSnapshot, formatMarketSnapshot,
   getQuote, formatQuote,
@@ -50,10 +62,22 @@ const reminders = new ReminderEngine(memory.db);
 const mood = new MoodTracker(memory.db);
 const summaries = new SummaryEngine(memory.db, CONFIG.ollamaUrl, CONFIG.model);
 const fileSearch = new FileSearchEngine();
+const journal = new JournalEngine(memory.db);
+const todos = new TodoManager(memory.db);
+const habits = new HabitTracker(memory.db);
+const pomodoro = new PomodoroEngine(memory.db);
+const goals = new GoalTracker(memory.db);
+const bookmarks = new BookmarkManager(memory.db);
+const kb = new KnowledgeBase(memory.db);
+const achievements = new AchievementEngine(memory.db);
+const insightEngine = new InsightEngine(memory.db);
+const briefing = new BriefingEngine(memory.db);
 
 // Start reminder scheduler
 reminders.startAll();
 reminders.startPeriodicCheck();
+
+const TYPE_ICONS = { note: '📝', snippet: '💻', link: '🔗', reference: '📚' };
 
 // Load personality profiles
 const profilesPath = join(ROOT, 'personalities', 'profiles.json');
@@ -256,6 +280,185 @@ app.get('/api/files/search', (req, res) => {
 
 app.get('/api/files/info', (req, res) => {
   res.json(fileSearch.getSearchableInfo());
+});
+
+// Journal
+app.get('/api/journal', (req, res) => {
+  const days = parseInt(req.query.days) || 7;
+  res.json(journal.getEntries(days));
+});
+
+app.get('/api/journal/today', (req, res) => {
+  res.json(journal.getToday());
+});
+
+app.get('/api/journal/prompt', (req, res) => {
+  res.json({ prompt: journal.getPrompt() });
+});
+
+app.get('/api/journal/streak', (req, res) => {
+  res.json(journal.getStreak());
+});
+
+app.get('/api/journal/weekly', (req, res) => {
+  res.json(journal.getWeeklyReflection());
+});
+
+app.get('/api/journal/pinned', (req, res) => {
+  res.json(journal.getPinned());
+});
+
+app.get('/api/journal/search', (req, res) => {
+  const q = req.query.q;
+  if (!q) return res.status(400).json({ error: 'Need ?q=query' });
+  res.json(journal.search(q));
+});
+
+app.get('/api/journal/:id', (req, res) => {
+  const entry = journal.getEntry(parseInt(req.params.id));
+  if (!entry) return res.status(404).json({ error: 'Not found' });
+  res.json(entry);
+});
+
+app.post('/api/journal', (req, res) => {
+  const { content, prompt, mood_score, mood_label } = req.body;
+  if (!content) return res.status(400).json({ error: 'Need content' });
+  res.json(journal.write(content, prompt, mood_score, mood_label));
+});
+
+app.put('/api/journal/:id', (req, res) => {
+  const { content } = req.body;
+  if (!content) return res.status(400).json({ error: 'Need content' });
+  res.json(journal.edit(parseInt(req.params.id), content));
+});
+
+app.delete('/api/journal/:id', (req, res) => {
+  res.json(journal.delete(parseInt(req.params.id)));
+});
+
+app.post('/api/journal/:id/pin', (req, res) => {
+  const result = journal.togglePin(parseInt(req.params.id));
+  if (!result) return res.status(404).json({ error: 'Not found' });
+  res.json(result);
+});
+
+// ── Productivity Endpoints ──
+
+// Todos
+app.get('/api/todos', (req, res) => res.json(todos.getAll(req.query.status)));
+app.get('/api/todos/stats', (req, res) => res.json(todos.getStats()));
+app.get('/api/todos/overdue', (req, res) => res.json(todos.getOverdue()));
+app.get('/api/todos/projects', (req, res) => res.json(todos.getProjects()));
+app.post('/api/todos', (req, res) => {
+  const { content, project, priority, due_date, tags } = req.body;
+  if (!content) return res.status(400).json({ error: 'Need content' });
+  res.json(todos.add(content, project, priority, due_date, tags));
+});
+app.put('/api/todos/:id', (req, res) => res.json(todos.edit(parseInt(req.params.id), req.body)));
+app.post('/api/todos/:id/complete', (req, res) => res.json(todos.complete(parseInt(req.params.id))));
+app.post('/api/todos/:id/start', (req, res) => res.json(todos.start(parseInt(req.params.id))));
+app.delete('/api/todos/:id', (req, res) => res.json(todos.delete(parseInt(req.params.id))));
+
+// Habits
+app.get('/api/habits', (req, res) => res.json(habits.getDashboard()));
+app.get('/api/habits/today', (req, res) => res.json(habits.getTodayStatus()));
+app.post('/api/habits', (req, res) => {
+  const { name, icon, frequency, target } = req.body;
+  if (!name) return res.status(400).json({ error: 'Need name' });
+  res.json(habits.addHabit(name, icon, frequency, target));
+});
+app.post('/api/habits/:id/check', (req, res) => res.json(habits.checkIn(parseInt(req.params.id), req.body.date)));
+app.post('/api/habits/:id/uncheck', (req, res) => res.json(habits.uncheck(parseInt(req.params.id), req.body.date)));
+app.delete('/api/habits/:id', (req, res) => res.json(habits.deleteHabit(parseInt(req.params.id))));
+
+// Pomodoro
+app.post('/api/pomodoro/start', (req, res) => res.json(pomodoro.start('rest', req.body.task, req.body.duration)));
+app.post('/api/pomodoro/stop', (req, res) => res.json(pomodoro.stop('rest')));
+app.get('/api/pomodoro/today', (req, res) => res.json(pomodoro.getTodayStats()));
+app.get('/api/pomodoro/week', (req, res) => res.json(pomodoro.getWeekStats()));
+
+// Goals
+app.get('/api/goals', (req, res) => res.json(goals.getAll(req.query.status || 'active')));
+app.post('/api/goals', (req, res) => {
+  const { title, description, target_date, category } = req.body;
+  if (!title) return res.status(400).json({ error: 'Need title' });
+  res.json(goals.addGoal(title, description, target_date, category));
+});
+app.get('/api/goals/:id', (req, res) => {
+  const g = goals.getGoal(parseInt(req.params.id));
+  if (!g) return res.status(404).json({ error: 'Not found' });
+  res.json(g);
+});
+app.post('/api/goals/:id/progress', (req, res) => res.json(goals.updateProgress(parseInt(req.params.id), req.body.progress)));
+app.post('/api/goals/:id/milestone', (req, res) => res.json(goals.addMilestone(parseInt(req.params.id), req.body.title)));
+app.post('/api/milestones/:id/complete', (req, res) => res.json(goals.completeMilestone(parseInt(req.params.id))));
+app.delete('/api/goals/:id', (req, res) => res.json(goals.deleteGoal(parseInt(req.params.id))));
+
+// Bookmarks
+app.get('/api/bookmarks', (req, res) => res.json(bookmarks.getAll()));
+app.post('/api/bookmarks', (req, res) => {
+  const { content, note, tags, session_id } = req.body;
+  if (!content) return res.status(400).json({ error: 'Need content' });
+  res.json(bookmarks.save(content, note, tags, session_id));
+});
+app.get('/api/bookmarks/search', (req, res) => res.json(bookmarks.search(req.query.q || '')));
+app.delete('/api/bookmarks/:id', (req, res) => res.json(bookmarks.delete(parseInt(req.params.id))));
+
+// Knowledge Base
+app.get('/api/kb', (req, res) => res.json(kb.getAll(req.query.type)));
+app.get('/api/kb/stats', (req, res) => res.json(kb.getStats()));
+app.post('/api/kb', (req, res) => {
+  const { title, content, type, language, tags } = req.body;
+  if (!title || !content) return res.status(400).json({ error: 'Need title and content' });
+  res.json(kb.add(title, content, type, language, tags));
+});
+app.get('/api/kb/search', (req, res) => res.json(kb.search(req.query.q || '')));
+app.get('/api/kb/:id', (req, res) => {
+  const item = kb.get(parseInt(req.params.id));
+  if (!item) return res.status(404).json({ error: 'Not found' });
+  res.json(item);
+});
+app.put('/api/kb/:id', (req, res) => res.json(kb.update(parseInt(req.params.id), req.body.content)));
+app.delete('/api/kb/:id', (req, res) => res.json(kb.delete(parseInt(req.params.id))));
+
+// Achievements
+app.get('/api/achievements', (req, res) => res.json(achievements.getAll()));
+app.get('/api/achievements/progress', (req, res) => res.json(achievements.getProgress()));
+
+// Insights
+app.get('/api/insights', (req, res) => res.json(insightEngine.generate()));
+
+// Daily Briefing
+app.get('/api/briefing', async (req, res) => {
+  try {
+    const result = await briefing.generate({
+      mood: mood.getCurrentMood(),
+      reminders: reminders.getUpcoming(120),
+      todos: todos.getStats(),
+      habits: habits.getTodayStatus(),
+      goals: goals.getAll('active'),
+      journalStreak: journal.getStreak(),
+      pomodoro: pomodoro.getTodayStats(),
+      achievements: achievements.getProgress(),
+      insights: insightEngine.generate(),
+    });
+    res.json({ briefing: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Dashboard (aggregate stats)
+app.get('/api/dashboard', (req, res) => {
+  res.json({
+    mood: mood.getCurrentMood(),
+    todos: todos.getStats(),
+    habits: habits.getTodayStatus(),
+    journal: journal.getStreak(),
+    pomodoro: pomodoro.getTodayStats(),
+    goals: goals.getAll('active').slice(0, 3),
+    achievements: achievements.getProgress(),
+    reminders: reminders.getUpcoming(60),
+    memory: memory.getStats(),
+  });
 });
 
 // ── WebSocket (streaming chat) ──
@@ -506,35 +709,501 @@ async function handleSlashCommand(ws, content) {
         break;
       }
 
+      // ── Journal ──
+
+      case 'journal':
+      case 'j': {
+        const sub = parts[1]?.toLowerCase();
+
+        if (!sub || sub === 'list' || sub === 'recent') {
+          const entries = journal.getEntries(7);
+          result = formatJournalList(entries);
+          break;
+        }
+
+        if (sub === 'write' || sub === 'new') {
+          // Everything after "write" is the entry
+          const content = parts.slice(2).join(' ').trim();
+          if (!content) {
+            const prompt = journal.getPrompt();
+            result = `📓 **Journal Prompt:**\n\n_${prompt}_\n\nWrite your entry: \`/journal write your thoughts here...\``;
+            break;
+          }
+          const currentMood = mood.getCurrentMood();
+          const entry = journal.write(content, null, currentMood.score, currentMood.label);
+          result = `📓 Entry saved! ${formatJournalEntry(entry)}`;
+          break;
+        }
+
+        if (sub === 'prompt') {
+          const prompt = journal.getPrompt();
+          result = `📓 **Today's Prompt:**\n\n_${prompt}_\n\nRespond with: \`/journal write your response...\``;
+          break;
+        }
+
+        if (sub === 'streak') {
+          result = formatStreak(journal.getStreak());
+          break;
+        }
+
+        if (sub === 'weekly' || sub === 'reflection' || sub === 'reflect') {
+          result = formatWeeklyReflection(journal.getWeeklyReflection());
+          break;
+        }
+
+        if (sub === 'pinned' || sub === 'pins') {
+          const pinned = journal.getPinned();
+          if (!pinned.length) { result = '📌 No pinned entries.'; break; }
+          result = '📌 **Pinned Entries:**\n\n';
+          for (const e of pinned) result += formatJournalEntry(e) + '\n\n';
+          break;
+        }
+
+        if (sub === 'pin') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /journal pin ID'; break; }
+          const pinResult = journal.togglePin(id);
+          if (!pinResult) { result = '⚠ Entry not found.'; break; }
+          result = pinResult.pinned ? `📌 Entry #${id} pinned.` : `Entry #${id} unpinned.`;
+          break;
+        }
+
+        if (sub === 'delete' || sub === 'del') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /journal delete ID'; break; }
+          journal.delete(id);
+          result = `🗑️ Entry #${id} deleted.`;
+          break;
+        }
+
+        if (sub === 'read' || sub === 'view') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /journal read ID'; break; }
+          const entry = journal.getEntry(id);
+          if (!entry) { result = '⚠ Entry not found.'; break; }
+          result = formatJournalEntry(entry);
+          break;
+        }
+
+        if (sub === 'search' || sub === 'find') {
+          const q = parts.slice(2).join(' ');
+          if (!q) { result = '⚠ Usage: /journal search keyword'; break; }
+          const found = journal.search(q);
+          result = formatJournalList(found);
+          break;
+        }
+
+        if (sub === 'today') {
+          const today = journal.getToday();
+          if (!today.length) { result = '📓 No entries today. Try `/journal write` or `/journal prompt`.'; break; }
+          result = `📓 **Today's Entries:**\n\n`;
+          for (const e of today) result += formatJournalEntry(e) + '\n\n';
+          break;
+        }
+
+        // Default: treat as a write
+        const content = parts.slice(1).join(' ').trim();
+        if (content) {
+          const currentMood = mood.getCurrentMood();
+          const entry = journal.write(content, null, currentMood.score, currentMood.label);
+          result = `📓 Entry saved! ${formatJournalEntry(entry)}`;
+        } else {
+          result = formatJournalList(journal.getEntries(7));
+        }
+        break;
+      }
+
+      // ── Todo ──
+
+      case 'todo':
+      case 'task':
+      case 't': {
+        const sub = parts[1]?.toLowerCase();
+        if (!sub || sub === 'list') {
+          result = formatTodoList(todos.getAll(), 'All Tasks');
+          break;
+        }
+        if (sub === 'add' || sub === 'new') {
+          const rest = parts.slice(2).join(' ');
+          if (!rest) { result = '⚠ Usage: /todo add Buy groceries'; break; }
+          // Parse priority: p1, p2, p3, p4
+          let priority = 2;
+          const prioMatch = rest.match(/\bp([1-4])\b/i);
+          if (prioMatch) priority = parseInt(prioMatch[1]);
+          // Parse project: #project
+          let project = 'inbox';
+          const projMatch = rest.match(/#(\w+)/);
+          if (projMatch) project = projMatch[1];
+          // Parse due: @tomorrow, @2026-02-20
+          let due = null;
+          const dueMatch = rest.match(/@(\S+)/);
+          if (dueMatch) {
+            if (dueMatch[1] === 'today') due = new Date().toISOString().slice(0, 10);
+            else if (dueMatch[1] === 'tomorrow') due = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+            else due = dueMatch[1];
+          }
+          const content = rest.replace(/\bp[1-4]\b/i, '').replace(/#\w+/, '').replace(/@\S+/, '').trim();
+          const t = todos.add(content, project, priority, due);
+          result = `✅ Task added: ${formatTodo(t)}`;
+          break;
+        }
+        if (sub === 'done' || sub === 'complete') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /todo done ID'; break; }
+          const t = todos.complete(id);
+          result = t ? `✅ Completed: ${formatTodo(t)}` : '⚠ Task not found';
+          break;
+        }
+        if (sub === 'start' || sub === 'doing') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /todo start ID'; break; }
+          const t = todos.start(id);
+          result = t ? `🔄 Started: ${formatTodo(t)}` : '⚠ Task not found';
+          break;
+        }
+        if (sub === 'del' || sub === 'delete' || sub === 'rm') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /todo del ID'; break; }
+          todos.delete(id);
+          result = `🗑️ Task #${id} deleted.`;
+          break;
+        }
+        if (sub === 'overdue') { result = formatTodoList(todos.getOverdue(), 'Overdue Tasks'); break; }
+        if (sub === 'today') { result = formatTodoList(todos.getToday(), "Today's Tasks"); break; }
+        if (sub === 'projects') {
+          const projs = todos.getProjects();
+          result = '📁 **Projects:**\n\n' + projs.map(p => `• **${p.project}** (${p.done}/${p.count} done)`).join('\n');
+          break;
+        }
+        if (sub === 'stats') {
+          const s = todos.getStats();
+          result = `📋 **Task Stats:** ${s.active} active, ${s.done} done, ${s.overdue} overdue, ${s.today_done} today, ${s.completion_rate}% completion`;
+          break;
+        }
+        // Treat as quick-add
+        const content = parts.slice(1).join(' ').trim();
+        if (content) {
+          const t = todos.add(content);
+          result = `✅ Task added: ${formatTodo(t)}`;
+        }
+        break;
+      }
+
+      // ── Habits ──
+
+      case 'habit':
+      case 'habits': {
+        const sub = parts[1]?.toLowerCase();
+        if (!sub || sub === 'list' || sub === 'dashboard') {
+          result = formatHabitDashboard(habits.getDashboard());
+          break;
+        }
+        if (sub === 'add' || sub === 'new') {
+          const name = parts.slice(2).join(' ').trim();
+          if (!name) { result = '⚠ Usage: /habit add Exercise'; break; }
+          const h = habits.addHabit(name);
+          result = `🔄 Habit created: **${h.name}** (${h.frequency})`;
+          break;
+        }
+        if (sub === 'check' || sub === 'done') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /habit check ID'; break; }
+          const r = habits.checkIn(id);
+          result = r.checked ? `✅ Checked in! Streak: 🔥${habits.getStreak(id)}` : '⚠ Already checked today';
+          break;
+        }
+        if (sub === 'uncheck') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /habit uncheck ID'; break; }
+          habits.uncheck(id);
+          result = '↩️ Unchecked.';
+          break;
+        }
+        if (sub === 'del' || sub === 'delete') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /habit del ID'; break; }
+          habits.deleteHabit(id);
+          result = `🗑️ Habit #${id} deleted.`;
+          break;
+        }
+        break;
+      }
+
+      // ── Pomodoro ──
+
+      case 'pomo':
+      case 'pomodoro':
+      case 'focus': {
+        const sub = parts[1]?.toLowerCase();
+        if (sub === 'start' || (!sub && !pomodoro.getStatus(sessionId))) {
+          const task = parts.slice(2).join(' ') || null;
+          const dur = parseInt(parts.find(p => /^\d+$/.test(p))) || 25;
+          const p = pomodoro.start(sessionId, task, dur);
+          result = `🍅 **Focus started!** ${p.duration} min${p.task ? ` — "${p.task}"` : ''}\nType \`/pomo stop\` when done.`;
+          // Schedule notification
+          setTimeout(() => {
+            const ended = pomodoro.stop(sessionId);
+            if (ended) {
+              ws.send(JSON.stringify({ type: 'system_msg', content: `🍅 **Pomodoro complete!** ${ended.elapsed_minutes} min focused${ended.task ? ` on "${ended.task}"` : ''}. Take a break!` }));
+            }
+          }, dur * 60 * 1000);
+          break;
+        }
+        if (sub === 'stop' || sub === 'done') {
+          const ended = pomodoro.stop(sessionId);
+          if (!ended) { result = '⚠ No active pomodoro.'; break; }
+          result = `🍅 **Stopped!** ${ended.elapsed_minutes} min focused${ended.task ? ` on "${ended.task}"` : ''}.`;
+          break;
+        }
+        if (sub === 'status') {
+          const s = pomodoro.getStatus(sessionId);
+          if (!s) { result = '⚠ No active pomodoro. Start with `/pomo start`.'; break; }
+          result = `🍅 **${s.remaining_display} remaining** ${s.task ? `— "${s.task}"` : ''}\n${s.done ? 'Time\'s up! 🎉' : 'Stay focused!'}`;
+          break;
+        }
+        if (sub === 'stats' || sub === 'today') {
+          const s = pomodoro.getTodayStats();
+          result = `🍅 **Today:** ${s.sessions} sessions, ${s.total_display} focused`;
+          break;
+        }
+        if (sub === 'week') {
+          const s = pomodoro.getWeekStats();
+          result = `🍅 **This week:** ${s.sessions} sessions, ${Math.floor(s.total_minutes / 60)}h ${s.total_minutes % 60}m`;
+          break;
+        }
+        // Default — show status or prompt to start
+        const status = pomodoro.getStatus(sessionId);
+        if (status) {
+          result = `🍅 **${status.remaining_display} remaining** ${status.task ? `— "${status.task}"` : ''}`;
+        } else {
+          result = `🍅 No active session. Start: \`/pomo start [task] [minutes]\``;
+        }
+        break;
+      }
+
+      // ── Goals ──
+
+      case 'goal':
+      case 'goals': {
+        const sub = parts[1]?.toLowerCase();
+        if (!sub || sub === 'list') {
+          result = formatGoalList(goals.getAll('active'));
+          break;
+        }
+        if (sub === 'add' || sub === 'new') {
+          const title = parts.slice(2).join(' ').trim();
+          if (!title) { result = '⚠ Usage: /goal add Learn Rust'; break; }
+          const g = goals.addGoal(title);
+          result = `🎯 Goal set: **${g.title}** — now add milestones with \`/goal ms ${g.id} milestone\``;
+          break;
+        }
+        if (sub === 'ms' || sub === 'milestone') {
+          const goalId = parseInt(parts[2]);
+          const msTitle = parts.slice(3).join(' ').trim();
+          if (!goalId || !msTitle) { result = '⚠ Usage: /goal ms GOAL_ID Milestone title'; break; }
+          const g = goals.addMilestone(goalId, msTitle);
+          result = g ? formatGoal(g) : '⚠ Goal not found.';
+          break;
+        }
+        if (sub === 'check' || sub === 'done') {
+          const msId = parseInt(parts[2]);
+          if (!msId) { result = '⚠ Usage: /goal check MILESTONE_ID'; break; }
+          const g = goals.completeMilestone(msId);
+          result = g ? `✅ Milestone complete!\n${formatGoal(g)}` : '⚠ Milestone not found.';
+          break;
+        }
+        if (sub === 'progress') {
+          const goalId = parseInt(parts[2]);
+          const pct = parseInt(parts[3]);
+          if (!goalId || isNaN(pct)) { result = '⚠ Usage: /goal progress ID 50'; break; }
+          const g = goals.updateProgress(goalId, pct);
+          result = g ? formatGoal(g) : '⚠ Goal not found.';
+          break;
+        }
+        if (sub === 'del' || sub === 'delete') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /goal del ID'; break; }
+          goals.deleteGoal(id);
+          result = `🗑️ Goal #${id} deleted.`;
+          break;
+        }
+        break;
+      }
+
+      // ── Bookmarks ──
+
+      case 'bookmark':
+      case 'bm': {
+        const sub = parts[1]?.toLowerCase();
+        if (!sub || sub === 'list') {
+          result = formatBookmarkList(bookmarks.getAll());
+          break;
+        }
+        if (sub === 'save' || sub === 'add') {
+          const content = parts.slice(2).join(' ').trim();
+          if (!content) { result = '⚠ Usage: /bookmark save some text to remember'; break; }
+          // Parse optional tags: #tag1 #tag2
+          const tags = (content.match(/#\w+/g) || []).map(t => t.slice(1)).join(',');
+          const cleanContent = content.replace(/#\w+/g, '').trim();
+          const bm = bookmarks.save(cleanContent, null, tags || null, sessionId);
+          result = `🔖 Bookmarked! (#${bm.id})`;
+          break;
+        }
+        if (sub === 'search' || sub === 'find') {
+          const q = parts.slice(2).join(' ');
+          result = formatBookmarkList(bookmarks.search(q));
+          break;
+        }
+        if (sub === 'del' || sub === 'delete') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /bookmark del ID'; break; }
+          bookmarks.delete(id);
+          result = `🗑️ Bookmark #${id} deleted.`;
+          break;
+        }
+        break;
+      }
+
+      // ── Knowledge Base ──
+
+      case 'kb':
+      case 'knowledge': {
+        const sub = parts[1]?.toLowerCase();
+        if (!sub || sub === 'list') {
+          result = formatKBList(kb.getAll());
+          break;
+        }
+        if (sub === 'add' || sub === 'save') {
+          // /kb add Title | Content
+          const rest = parts.slice(2).join(' ');
+          const pipeIdx = rest.indexOf('|');
+          if (pipeIdx === -1) { result = '⚠ Usage: /kb add Title | Content here'; break; }
+          const title = rest.slice(0, pipeIdx).trim();
+          const content = rest.slice(pipeIdx + 1).trim();
+          // Detect type
+          let type = 'note';
+          if (/^https?:\/\//i.test(content)) type = 'link';
+          else if (/```|function |const |import |def |class /i.test(content)) type = 'snippet';
+          const item = kb.add(title, content, type);
+          result = `📚 Saved! ${TYPE_ICONS[type] || '📝'} **#${item.id} ${item.title}**`;
+          break;
+        }
+        if (sub === 'search' || sub === 'find') {
+          const q = parts.slice(2).join(' ');
+          result = formatKBList(kb.search(q));
+          break;
+        }
+        if (sub === 'read' || sub === 'view') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /kb read ID'; break; }
+          const item = kb.get(id);
+          if (!item) { result = '⚠ Not found.'; break; }
+          result = `${TYPE_ICONS[item.type] || '📝'} **${item.title}**\n\n${item.content}`;
+          break;
+        }
+        if (sub === 'del' || sub === 'delete') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: /kb del ID'; break; }
+          kb.delete(id);
+          result = `🗑️ KB item #${id} deleted.`;
+          break;
+        }
+        break;
+      }
+
+      // ── Achievements, Insights, Briefing, Dashboard ──
+
+      case 'achievements':
+      case 'ach': {
+        result = formatAchievements(achievements.getAll());
+        break;
+      }
+
+      case 'insights':
+      case 'insight': {
+        result = formatInsights(insightEngine.generate());
+        break;
+      }
+
+      case 'briefing':
+      case 'brief':
+      case 'morning':
+      case 'gm': {
+        ws.send(JSON.stringify({ type: 'system_msg', content: '☀️ Generating briefing...' }));
+        result = await briefing.generate({
+          mood: mood.getCurrentMood(),
+          reminders: reminders.getUpcoming(120),
+          todos: todos.getStats(),
+          habits: habits.getTodayStatus(),
+          goals: goals.getAll('active'),
+          journalStreak: journal.getStreak(),
+          pomodoro: pomodoro.getTodayStats(),
+          achievements: achievements.getProgress(),
+          insights: insightEngine.generate(),
+        });
+        break;
+      }
+
+      case 'dash':
+      case 'dashboard': {
+        const d = {
+          mood: mood.getCurrentMood(),
+          todos: todos.getStats(),
+          habits: habits.getDashboard(),
+          journalStreak: journal.getStreak(),
+          pomodoro: pomodoro.getTodayStats(),
+          goals: goals.getAll('active').slice(0, 3),
+          achievements: achievements.getProgress(),
+        };
+        result = `**📊 VELLE.AI Dashboard**\n\n`;
+        result += `**Mood:** ${d.mood.label} (${d.mood.trend})\n`;
+        result += `**Tasks:** ${d.todos.active} active, ${d.todos.today_done} done today, ${d.todos.overdue} overdue\n`;
+        result += `**Journal:** ${'🔥'.repeat(Math.min(d.journalStreak.current, 5))} ${d.journalStreak.current} day streak\n`;
+        result += `**Focus:** ${d.pomodoro.total_display} today\n`;
+        result += `**Achievements:** ${d.achievements.unlocked}/${d.achievements.total}\n\n`;
+        if (d.habits.length) {
+          result += '**Habits:**\n';
+          for (const h of d.habits) {
+            const weekViz = h.week.map(dd => dd.done ? '🟩' : '⬜').join('');
+            result += `${h.completed_today ? '✅' : '☐'} ${h.icon} ${h.name} ${weekViz} ${h.streak > 0 ? '🔥' + h.streak : ''}\n`;
+          }
+          result += '\n';
+        }
+        if (d.goals.length) {
+          result += '**Goals:**\n';
+          for (const g of d.goals) result += `• ${g.title} ${'█'.repeat(Math.round(g.progress / 10))}${'░'.repeat(10 - Math.round(g.progress / 10))} ${g.progress}%\n`;
+        }
+        break;
+      }
+
       case 'help': {
         result = `**📖 VELLE.AI Commands**
 
-**📊 Quant**
-/market — Market snapshot
-/quote TICKER — Price quote
-/analyze TICKER — Full quant analysis
-/chart TICKER [range] — Chart (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y)
-/momentum [N] — Momentum leaders
-/dislocate [N] — Value dislocations
-/backtest TICKER — RSI backtest
-/sentiment TICKER — News sentiment
-/moonshot — Breakout radar
+**📊 Quant** — /market /quote /analyze /chart /momentum /dislocate /backtest /sentiment /moonshot
 
-**⏰ Reminders**
-/remind in 10 min check email — Set a reminder
-/remind at 3:00pm meeting — Schedule by time
-/remind — Show all pending
-/cancelremind ID — Cancel a reminder
+**⏰ Reminders** — /remind [time] [task] /cancelremind ID
 
-**🧠 Memory & Mood**
-/mood — Current mood + 7-day trend
-/summary [date] — Generate daily digest
-/history — Recent summaries
+**🧠 Mood & Summaries** — /mood /summary /history
 
-**📁 Files**
-/find query — Search local files by name/content
+**📁 Files** — /find query
 
-Or just ask naturally — VELLE.AI knows all these tools. 😼`;
+**📓 Journal** — /journal [write|prompt|today|streak|weekly|pin|read|search|delete]
+
+**📋 Tasks** — /todo [add|done|start|del|overdue|today|projects|stats] (p1-p4 priority, #project, @due)
+
+**🔄 Habits** — /habit [add|check|uncheck|del|dashboard]
+
+**🍅 Focus** — /pomo [start|stop|status|stats|week]
+
+**🎯 Goals** — /goal [add|ms|check|progress|del]
+
+**🔖 Bookmarks** — /bookmark [save|search|del]
+
+**📚 Knowledge** — /kb [add Title | Content|search|read|del]
+
+**📊 Overview** — /dashboard /briefing /achievements /insights
+
+Or just ask naturally. 😼`;
         break;
       }
       default:
@@ -704,6 +1373,36 @@ Use this data in your response. If the user wants deeper analysis, suggest they 
 
             // Check for "remember" patterns in user message
             await autoExtractMemories(userMessage, fullResponse, ws, sessionId);
+
+            // Check achievements
+            try {
+              const hour = new Date().getHours();
+              const stats = {
+                messages: memory.getStats().conversations,
+                memories: memory.getStats().memories,
+                journal_entries: journal.getStreak().total_entries,
+                journal_streak: journal.getStreak().current,
+                todos_done: todos.getStats().done,
+                habits: habits.getAllHabits().length,
+                max_habit_streak: Math.max(0, ...habits.getAllHabits().map(h => habits.getStreak(h.id))),
+                pomodoros: pomodoro.getWeekStats().sessions,
+                goals: goals.getAll('active').length + goals.getAll('completed').length,
+                goals_done: goals.getAll('completed').length,
+                kb_items: kb.getStats().total,
+                bookmarks: bookmarks.getAll().length,
+                night_messages: hour >= 0 && hour < 5 ? 1 : 0,
+                early_messages: hour >= 5 && hour < 6 ? 1 : 0,
+              };
+              const newAch = achievements.checkAndUnlock(stats);
+              for (const a of newAch) {
+                ws.send(JSON.stringify({
+                  type: 'achievement_unlocked',
+                  icon: a.icon,
+                  name: a.name,
+                  desc: a.desc,
+                }));
+              }
+            } catch (e) { console.warn('[Achievements] Check error:', e.message); }
 
             ws.send(JSON.stringify({
               type: 'stream_end',

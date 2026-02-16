@@ -706,6 +706,38 @@
     background: var(--accent);
   }
 
+  /* Achievement toast */
+  .achievement-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #1a1a2e, #0d0d14);
+    border: 1px solid #f59e0b;
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 0 30px #f59e0b44, 0 4px 20px rgba(0,0,0,0.5);
+    z-index: 10000;
+    animation: achieveSlide 0.4s ease-out, achieveFade 0.5s ease 3.5s forwards;
+    max-width: 320px;
+  }
+
+  .achievement-toast .ach-icon { font-size: 32px; }
+  .achievement-toast .ach-info { display: flex; flex-direction: column; gap: 2px; }
+  .achievement-toast .ach-label { font-size: 9px; color: #f59e0b; text-transform: uppercase; letter-spacing: 2px; }
+  .achievement-toast .ach-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .achievement-toast .ach-desc { font-size: 10px; color: var(--text-dim); }
+
+  @keyframes achieveSlide {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes achieveFade {
+    to { opacity: 0; transform: translateY(-20px); }
+  }
+
   /* ── Input Area ── */
   .input-area {
     padding: 16px 32px 24px;
@@ -904,18 +936,22 @@
     <div class="input-area">
       <!-- Quant command bar -->
       <div class="quant-bar" id="quantBar">
-        <button class="quant-cmd-btn" onclick="runSlash('/market')">📊 Market</button>
-        <button class="quant-cmd-btn" onclick="promptSlash('/quote ')">💹 Quote</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/briefing')">☀️ Brief</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/dashboard')">📊 Dash</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/market')">💹 Market</button>
         <button class="quant-cmd-btn" onclick="promptSlash('/analyze ')">🧠 Analyze</button>
-        <button class="quant-cmd-btn" onclick="promptSlash('/chart ')">📈 Chart</button>
-        <button class="quant-cmd-btn" onclick="runSlash('/momentum')">🚀 Momentum</button>
-        <button class="quant-cmd-btn" onclick="runSlash('/dislocate')">🔍 Value</button>
-        <button class="quant-cmd-btn" onclick="promptSlash('/backtest ')">📊 Backtest</button>
-        <button class="quant-cmd-btn" onclick="promptSlash('/sentiment ')">📰 Sentiment</button>
-        <button class="quant-cmd-btn" onclick="runSlash('/moonshot')">🌙 Moonshot</button>
-        <button class="quant-cmd-btn" onclick="runSlash('/remind')">⏰ Reminders</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/todo')">📋 Tasks</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/habit')">🔄 Habits</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/pomo')">🍅 Focus</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/goal')">🎯 Goals</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/journal')">📓 Journal</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/journal prompt')">✍️ Prompt</button>
         <button class="quant-cmd-btn" onclick="runSlash('/mood')">🧠 Mood</button>
-        <button class="quant-cmd-btn" onclick="runSlash('/summary')">📝 Summary</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/remind')">⏰ Remind</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/kb')">📚 KB</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/bookmark')">🔖 Marks</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/achievements')">🏆 Achieve</button>
+        <button class="quant-cmd-btn" onclick="runSlash('/insights')">💡 Insights</button>
         <button class="quant-cmd-btn" onclick="promptSlash('/find ')">📁 Files</button>
         <button class="quant-cmd-btn" onclick="runSlash('/help')">❓ Help</button>
       </div>
@@ -1091,6 +1127,10 @@ function handleMessage(msg) {
 
     case 'reminder_set':
       addSystemMessage(`⏰ Reminder set: "${msg.content}" — ${msg.due_at}${msg.repeat ? ` (${msg.repeat})` : ''}`);
+      break;
+
+    case 'achievement_unlocked':
+      showAchievementToast(msg.icon, msg.name, msg.desc);
       break;
 
     case 'error':
@@ -1587,6 +1627,26 @@ function renderChart(chartData) {
 
 function loadChartRange(ticker, range) {
   send('chat', { content: `/chart ${ticker} ${range}` });
+}
+
+// ── Achievement Toast ──
+
+function showAchievementToast(icon, name, desc) {
+  const toast = document.createElement('div');
+  toast.className = 'achievement-toast';
+  toast.innerHTML = `
+    <span class="ach-icon">${icon}</span>
+    <div class="ach-info">
+      <span class="ach-label">Achievement Unlocked</span>
+      <span class="ach-name">${name}</span>
+      <span class="ach-desc">${desc}</span>
+    </div>
+  `;
+  document.body.appendChild(toast);
+  if (typeof voice !== 'undefined' && voice.ttsEnabled) {
+    speak(`Achievement unlocked: ${name}. ${desc}`);
+  }
+  setTimeout(() => toast.remove(), 4500);
 }
 
 // ═══════════════════════════════════════
