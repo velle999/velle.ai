@@ -483,7 +483,7 @@ wss.on('connection', (ws) => {
     switch (msg.type) {
       case 'chat':
         // Check for slash commands first
-        const slashResult = await handleSlashCommand(ws, msg.content);
+        const slashResult = await handleSlashCommand(ws, msg.content, sessionId);
         if (slashResult) break; // Slash command handled it
         await handleChat(ws, sessionId, currentPersonality, msg.content);
         break;
@@ -533,7 +533,7 @@ wss.on('connection', (ws) => {
 
 // ── Slash Command Handler (direct quant commands from chat) ──
 
-async function handleSlashCommand(ws, content) {
+async function handleSlashCommand(ws, content, sessionId) {
   const trimmed = content.trim();
   if (!trimmed.startsWith('/')) return false;
 
