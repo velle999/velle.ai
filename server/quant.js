@@ -842,6 +842,222 @@ function formatMoonshots(picks) {
 
 // ── Chart Data (for frontend rendering) ──
 
+// ── Yahoo Finance v10 Fundamentals (matches yf.Ticker().info) ──
+
+async function yahooFundamentals(ticker) {
+  try {
+    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=defaultKeyStatistics,financialData,summaryDetail`;
+    const resp = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) });
+    const data = await resp.json();
+    const ks = data?.quoteSummary?.result?.[0]?.defaultKeyStatistics || {};
+    const fd = data?.quoteSummary?.result?.[0]?.financialData || {};
+    const sd = data?.quoteSummary?.result?.[0]?.summaryDetail || {};
+
+    const raw = (obj) => obj?.raw ?? obj?.rawValue ?? obj ?? null;
+
+    return {
+      revenueGrowth: raw(fd.revenueGrowth),
+      grossMargins: raw(fd.grossMargins),
+      returnOnEquity: raw(fd.returnOnEquity),
+      debtToEquity: raw(fd.debtToEquity),
+      payoutRatio: raw(sd.payoutRatio),
+      dividendYield: raw(sd.dividendYield),
+      marketCap: raw(sd.marketCap),
+      forwardPE: raw(sd.forwardPE) || raw(ks.forwardPE),
+      trailingPE: raw(sd.trailingPE),
+      shortName: raw(sd.shortName),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ── Stock Ideas Generator (4 buckets — mirrors Discord bot) ──
+
+async function generateIdeas(perBucket = 5) {
+  // Batch fetch all quotes for price data
+  const quotes = await yahooQuoteBatch(WATCHLIST);
+
+  // ── 1. Value / Dislocation ── (same as existing dislocations but formatted for ideas)
+  const valResults = [];
+  for (const sym of WATCHLIST) {
+    const q = quotes[sym];
+    if (!q || !q.price) continue;
+    const pe = q.forwardPE || q.trailingPE;
+    const mc = q.marketCap;
+    if (!pe || pe <= 0 || pe < 3 || pe > 60) continue;
+    if (!mc || mc < 1e9) continue;
+
+    const valueScore = (1.0 / pe) * 100;
+    const low52 = q.fiftyTwoWeekLow || 0;
+    const nearLow = low52 > 0 ? (q.price / low52 - 1) : 0;
+    const discount = nearLow < 0.2 ? 0.3 : nearLow < 0.4 ? 0.15 : 0;
+
+    let reason = `PE ${pe.toFixed(1)}`;
+    if (nearLow < 0.15) reason += `, near 52w low`;
+    if (q.dividendYield && q.dividendYield > 0.02) reason += `, yield ${(q.dividendYield * 100).toFixed(1)}%`;
+
+    valResults.push({
+      ticker: sym, name: q.name || sym, score: valueScore + discount,
+      pe: +pe.toFixed(1), price: q.price, reason,
+    });
+  }
+  valResults.sort((a, b) => b.score - a.score);
+  const valTop = valResults.slice(0, perBucket);
+
+  // ── 2. Momentum Leaders ──
+  const momoResults = [];
+  for (const sym of WATCHLIST) {
+    try {
+      const rows = await yahooChart(sym, '1y', '1d');
+      if (!rows || rows.length < 60) continue;
+      const closes = rows.map(r => r.close);
+      const volumes = rows.map(r => r.volume);
+      const price = closes[closes.length - 1];
+      if (price < 5) continue;
+
+      // Average daily volume check (ADV20 >= 2M like your bot)
+      const vol20 = volumes.slice(-20);
+      const adv20 = vol20.reduce((a, b) => a + b, 0) / vol20.length;
+      if (adv20 < 2_000_000) continue;
+
+      const ret = (days) => {
+        if (closes.length <= days) return null;
+        const old = closes[closes.length - 1 - days];
+        return old > 0 ? (price / old - 1) : null;
+      };
+
+      const r1m = ret(21), r3m = ret(63), r6m = ret(126), r12m = ret(252);
+      if (r1m == null && r3m == null) continue;
+
+      const rsi = calcRSI(closes);
+      const latestRSI = rsi.filter(v => v != null).pop() || 50;
+
+      // Weighted multi-TF momentum (matches _momentum_score)
+      let score = 0;
+      const parts = [], weights = [];
+      if (r12m != null) { parts.push(r12m); weights.push(0.4); }
+      if (r6m != null) { parts.push(r6m); weights.push(0.3); }
+      if (r3m != null) { parts.push(r3m); weights.push(0.2); }
+      if (r1m != null) { parts.push(r1m); weights.push(0.1); }
+      if (!parts.length) continue;
+
+      const totalW = weights.reduce((a, b) => a + b, 0);
+      score = parts.reduce((sum, v, i) => sum + v * weights[i], 0) / totalW;
+
+      if (latestRSI > 80) score -= 0.05;
+
+      momoResults.push({
+        ticker: sym, name: quotes[sym]?.name || sym, score,
+        r1m, r3m, r6m, rsi: latestRSI, price, adv20: Math.round(adv20),
+      });
+    } catch { continue; }
+  }
+  momoResults.sort((a, b) => b.score - a.score);
+  const momoTop = momoResults.slice(0, perBucket);
+
+  // ── 3. Quality Growth ── (matches your bot: revenueGrowth>=0.15, grossMargins>=0.40, ROE>=0.15, D/E<=2.0)
+  const qualResults = [];
+  for (const sym of WATCHLIST) {
+    try {
+      const info = await yahooFundamentals(sym);
+      if (!info) continue;
+
+      const rg = info.revenueGrowth || 0;
+      const gm = info.grossMargins || 0;
+      const roe = info.returnOnEquity || 0;
+      const dte = info.debtToEquity || 0;
+      const mc = info.marketCap || quotes[sym]?.marketCap || 0;
+
+      // Quality screen — exact same filters as your Discord bot
+      if (rg < 0.15 || gm < 0.40 || roe < 0.15 || dte > 2.0) continue;
+      if (mc < 5e8 || mc > 5e11) continue;
+
+      // Score: rg*0.5 + gm*0.3 + roe*0.2 - (dte>1.5)*0.05
+      const score = rg * 0.5 + gm * 0.3 + roe * 0.2 - (dte > 1.5 ? 0.05 : 0);
+
+      qualResults.push({
+        ticker: sym, name: quotes[sym]?.name || sym, score,
+        rg: +(rg * 100).toFixed(1), gm: +(gm * 100).toFixed(1),
+        roe: +(roe * 100).toFixed(1), dte: +dte.toFixed(2),
+        price: quotes[sym]?.price || 0,
+      });
+    } catch { continue; }
+  }
+  qualResults.sort((a, b) => b.score - a.score);
+  const qualTop = qualResults.slice(0, perBucket);
+
+  // ── 4. Income ── (matches your bot: dividendYield>=0.03, payoutRatio 0-0.8)
+  const incResults = [];
+  for (const sym of WATCHLIST) {
+    try {
+      const info = await yahooFundamentals(sym);
+      if (!info) continue;
+
+      const dy = info.dividendYield || 0;
+      const payout = info.payoutRatio || 0;
+
+      if (dy < 0.03) continue;
+      if (payout <= 0 || payout > 0.8) continue;
+
+      // Score: dy*0.7 + (0.8-payout)*0.3
+      const score = dy * 0.7 + (0.8 - payout) * 0.3;
+
+      incResults.push({
+        ticker: sym, name: quotes[sym]?.name || sym, score,
+        dy: +(dy * 100).toFixed(2), payout: +(payout * 100).toFixed(1),
+        price: quotes[sym]?.price || 0,
+      });
+    } catch { continue; }
+  }
+  incResults.sort((a, b) => b.score - a.score);
+  const incTop = incResults.slice(0, perBucket);
+
+  return { value: valTop, momentum: momoTop, quality: qualTop, income: incTop };
+}
+
+function formatIdeas(ideas) {
+  const { value, momentum, quality, income } = ideas;
+
+  let text = '🧠 **Kabuneko Ideas:**\n\n';
+
+  text += '**💎 Value / Dislocation**\n';
+  if (value.length) {
+    for (let i = 0; i < value.length; i++) {
+      const v = value[i];
+      text += `\`${i + 1}.\` **${v.ticker}** $${v.price.toFixed(2)} — ${v.reason}\n`;
+    }
+  } else text += '—\n';
+
+  text += '\n**🚀 Momentum Leaders**\n';
+  if (momentum.length) {
+    const pct = (v) => v != null ? `${(v * 100) >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%` : '—';
+    for (let i = 0; i < momentum.length; i++) {
+      const m = momentum[i];
+      text += `\`${i + 1}.\` **${m.ticker}** $${m.price.toFixed(2)} [1m ${pct(m.r1m)} | 3m ${pct(m.r3m)} | 6m ${pct(m.r6m)}]\n`;
+    }
+  } else text += '—\n';
+
+  text += '\n**⭐ Quality Growth**\n';
+  if (quality.length) {
+    for (let i = 0; i < quality.length; i++) {
+      const q = quality[i];
+      text += `\`${i + 1}.\` **${q.ticker}** — rev +${q.rg}% | margin ${q.gm}% | ROE ${q.roe}% | D/E ${q.dte}\n`;
+    }
+  } else text += '—\n';
+
+  text += '\n**💰 Income**\n';
+  if (income.length) {
+    for (let i = 0; i < income.length; i++) {
+      const inc = income[i];
+      text += `\`${i + 1}.\` **${inc.ticker}** — yield ${inc.dy}% | payout ${inc.payout}%\n`;
+    }
+  } else text += '—\n';
+
+  text += '\nReply with a ticker to go deeper. Not financial advice — I\'m a cat. 😼';
+  return text;
+}
+
 async function getChartData(ticker, range = '6mo') {
   ticker = ticker.toUpperCase();
   const rows = await yahooChart(ticker, range, '1d');
@@ -890,6 +1106,7 @@ export {
   getTickerNews,      analyzeSentiment,
   getSentiment,       formatSentiment,
   findMoonshots,      formatMoonshots,
+  generateIdeas,      formatIdeas,
   getChartData,
 
   // Constants

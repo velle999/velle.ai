@@ -82,6 +82,13 @@ const COMMAND_HANDLERS = {
     return { success: true, result: formatMoonshots(picks), data: picks };
   },
 
+  stock_ideas: async (params) => {
+    const { generateIdeas, formatIdeas } = await import('./quant.js');
+    const n = params.n || params.per_bucket || 5;
+    const ideas = await generateIdeas(n);
+    return { success: true, result: formatIdeas(ideas), data: ideas };
+  },
+
   // ═══════════════════════════════════
   //  SYSTEM COMMANDS
   // ═══════════════════════════════════

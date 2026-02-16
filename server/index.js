@@ -34,6 +34,7 @@ import {
   backtestRSI, formatBacktest,
   getSentiment, formatSentiment,
   findMoonshots, formatMoonshots,
+  generateIdeas, formatIdeas,
   getChartData,
   WATCHLIST,
 } from './quant.js';
@@ -232,6 +233,14 @@ app.get('/api/quant/moonshots', async (req, res) => {
 
 app.get('/api/quant/watchlist', (req, res) => {
   res.json(WATCHLIST);
+});
+
+app.get('/api/quant/ideas', async (req, res) => {
+  try {
+    const n = parseInt(req.query.n) || 5;
+    const ideas = await generateIdeas(n);
+    res.json(ideas);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Advanced Feature Endpoints ──
@@ -627,6 +636,14 @@ async function handleSlashCommand(ws, content, sessionId) {
         ws.send(JSON.stringify({ type: 'system_msg', content: '🚀 Scanning moonshot radar...' }));
         const picks = await findMoonshots();
         result = formatMoonshots(picks);
+        break;
+      }
+      case 'ideas':
+      case 'picks': {
+        const n = parseInt(arg) || 5;
+        ws.send(JSON.stringify({ type: 'system_msg', content: '🧠 Building stock ideas across 4 styles... this takes a minute.' }));
+        const ideas = await generateIdeas(n);
+        result = formatIdeas(ideas);
         break;
       }
 
@@ -1187,7 +1204,7 @@ async function handleSlashCommand(ws, content, sessionId) {
       case 'help': {
         result = `**📖 VELLE.AI Commands**
 
-**📊 Quant** — /market /quote /analyze /chart /momentum /dislocate /backtest /sentiment /moonshot
+**📊 Quant** — /market /quote /analyze /chart /momentum /dislocate /backtest /sentiment /moonshot /ideas
 
 **⏰ Reminders** — /remind [time] [task] /cancelremind ID
 
@@ -1260,6 +1277,7 @@ Examples:
 {"action": "sentiment", "ticker": "TSLA"}
 {"action": "backtest", "ticker": "AMD"}
 {"action": "moonshot_scan"}
+{"action": "stock_ideas"}
 {"action": "add_todo", "content": "Buy groceries", "priority": 1, "project": "personal"}
 {"action": "complete_todo", "id": 5}
 {"action": "add_habit", "name": "Exercise"}
