@@ -1,3 +1,24 @@
+// MUST BE LINES 1-10 - CRITICAL FOR PKG + ESM
+if (typeof process !== 'undefined' && process.pkg) {
+  // Fix __dirname and path resolution
+  const path = require('path');
+  const os = require('os');
+  
+  // Redirect DB to writable location
+  process.env.DB_PATH = path.join(
+    os.platform() === 'win32' ? process.env.APPDATA : os.homedir(),
+    'velle-ai',
+    'velle-ai.db'
+  );
+  
+  // Fix module resolution for ESM in pkg
+  require = require('esm')(module);
+  global.__filename = __filename;
+  global.__dirname = __dirname;
+  
+  // Force UTC for Feb 17, 2026 reminders
+  process.env.TZ = 'UTC';
+}
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';

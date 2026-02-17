@@ -1,18 +1,53 @@
 import Database from 'better-sqlite3';
 import { existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { app } from 'electron';
 
 export class MemoryManager {
   constructor(dbPath) {
-    const dir = dirname(dbPath);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    // Resolve the correct database path for packaged/portable apps
+    const resolvedPath = this._resolveDbPath(dbPath);
+    const dir = dirname(resolvedPath);
+    
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
 
-    this.db = new Database(dbPath);
+    this.db = new Database(resolvedPath);
     this.db.pragma('journal_mode = WAL');
     this._initTables();
+  }
+
+  _resolveDbPath(providedPath) {
+    // If a valid absolute path is provided and writable, use it
+    if (providedPath && !providedPath.includes('app.asar')) {
+      return providedPath;
+    }
+
+    // Portable mode: use folder next to the executable
+    if (process.env.PORTABLE_EXECUTABLE_DIR) {
+      const portableData = join(process.env.PORTABLE_EXECUTABLE_DIR, 'velle-ai-data');
+      if (!existsSync(portableData)) {
+        mkdirSync(portableData, { recursive: true });
+      }
+      return join(portableData, 'velle.db');
+    }
+
+    // Standard packaged app: use Electron's userData
+    if (app?.isPackaged) {
+      const userData = app.getPath('userData');
+      if (!existsSync(userData)) {
+        mkdirSync(userData, { recursive: true });
+      }
+      return join(userData, 'velle.db');
+    }
+
+    // Development: use local project folder
+    const devData = join(process.cwd(), 'data');
+    if (!existsSync(devData)) {
+      mkdirSync(devData, { recursive: true });
+    }
+    return join(devData, 'velle.db');
   }
 
   _initTables() {
@@ -98,10 +133,8 @@ export class MemoryManager {
   // ── Memories (facts, preferences, knowledge) ──
 
   saveMemory(content, category = 'general', importance = 5, source = 'explicit') {
-    // Check for duplicate/similar memories
     const existing = this.searchMemories(content.substring(0, 50));
     if (existing.length > 0) {
-      // Update existing if very similar
       for (const mem of existing) {
         if (this._similarity(mem.content, content) > 0.8) {
           this.updateMemory(mem.id, content, importance);
@@ -134,25 +167,12 @@ export class MemoryManager {
   }
 
   searchMemories(query) {
-    // Simple keyword search — upgrade to vector search later
     const keywords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
     if (keywords.length === 0) return [];
 
     const conditions = keywords.map(() => `LOWER(content) LIKE ?`).join(' OR ');
     const params = keywords.map(k => `%${k}%`);
 
-    const stmt = this.db.prepare(`
-      SELECT *, 
-        (SELECT COUNT(*) FROM (${keywords.map(() => 
-          `SELECT 1 WHERE LOWER(content) LIKE ?`
-        ).join(' UNION ALL ')}) ) as match_count
-      FROM memories
-      WHERE ${conditions}
-      ORDER BY importance DESC
-      LIMIT 10
-    `);
-
-    // Fallback to simpler query
     const simple = this.db.prepare(`
       SELECT * FROM memories WHERE ${conditions}
       ORDER BY importance DESC LIMIT 10
@@ -181,14 +201,10 @@ export class MemoryManager {
   // ── Context Building ──
 
   buildContext(sessionId, userMessage) {
-    // Get recent conversation
     const history = this.getConversationHistory(sessionId, 10);
-
-    // Search for relevant memories
     const relevantMemories = this.searchMemories(userMessage);
     const topMemories = this.getMemories(null, 5);
 
-    // Merge and deduplicate
     const allMemories = [...relevantMemories];
     for (const mem of topMemories) {
       if (!allMemories.find(m => m.id === mem.id)) {
@@ -196,7 +212,6 @@ export class MemoryManager {
       }
     }
 
-    // Touch accessed memories
     for (const mem of relevantMemories) {
       this.db.prepare(`
         UPDATE memories SET last_accessed = datetime('now','localtime') WHERE id = ?

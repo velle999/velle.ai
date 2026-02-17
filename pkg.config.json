@@ -1,0 +1,1 @@
+{"assets":["public/**/*","server/*.js","node_modules/better-sqlite3/**/*","node_modules/sqlite3/**/*"],"scripts":["server/*.js"],"targets":["node18-win-x64"],"outputPath":"dist","nodeOptions":["--experimental-modules","--no-warnings"]}
