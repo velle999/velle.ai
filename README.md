@@ -5,21 +5,34 @@ Your local AI operating system. Memory, voice, quant engine, productivity suite,
 ![Node.js](https://img.shields.io/badge/Node.js-18+-green) ![Ollama](https://img.shields.io/badge/Ollama-local_LLM-blue) ![SQLite](https://img.shields.io/badge/SQLite-persistent-orange) 
 ---
 
-## Quick Start
+🚀 Quick Start Portable EXE
 
-```bash
-# 1. Install Ollama → https://ollama.ai
+1. Install Ollama
+
+Download and install Ollama from
+https://ollama.com
+
+
+
+2. Download a local model
+
 ollama pull qwen3:8b
 
-# 2. Install & run
-npm install
-$env:MODEL="qwen3:8b"; npm start    # Windows PowerShell
-MODEL=qwen3:8b npm start             # Linux/Mac
-```
 
-Open **http://localhost:3000**
 
----
+
+3. Launch VELLE.AI
+Run the portable executable
+
+VELLE-AI-1.0.0-portable.exe
+
+
+Admin recommended for full system access features
+
+
+
+4. Start using your AI OS
+The full interface opens instantly
 
 ## Architecture
 
