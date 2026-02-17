@@ -2,8 +2,7 @@
 
 Your local AI operating system. Memory, voice, quant engine, productivity suite, journal, habits, goals, achievements — all running on your machine. No cloud. No leash.
 
-![Node.js](https://img.shields.io/badge/Node.js-18+-green) ![Ollama](https://img.shields.io/badge/Ollama-local_LLM-blue) ![SQLite](https://img.shields.io/badge/SQLite-persistent-orange) ![License](https://img.shields.io/badge/license-MIT-purple)
-
+![Node.js](https://img.shields.io/badge/Node.js-18+-green) ![Ollama](https://img.shields.io/badge/Ollama-local_LLM-blue) ![SQLite](https://img.shields.io/badge/SQLite-persistent-orange) 
 ---
 
 ## Quick Start
@@ -439,7 +438,3 @@ MODEL=qwen3:8b                          # Model name (any Ollama model)
 Zero external AI APIs. Zero telemetry. Everything local.
 
 ---
-
-## License
-
-MIT
