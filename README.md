@@ -427,16 +427,6 @@ All endpoints at `http://localhost:3000/api/`:
 
 ---
 
-## Environment Variables
-
-```bash
-PORT=3000                                # Server port (default: 3000)
-OLLAMA_URL=http://localhost:11434        # Ollama API endpoint
-MODEL=qwen3:8b                          # Model name (any Ollama model)
-```
-
----
-
 ## Tech Stack
 
 - **Runtime:** Node.js 18+
