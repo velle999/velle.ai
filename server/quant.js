@@ -29,7 +29,47 @@ const WATCHLIST = [
 
 const EMOJI_BANK = ['🚀','📈','📉','💸','🦍','💎','🔥','🧠','🤡','🤑','📊','🔮','👀','💀','⚡','🐻','🐂','🤖'];
 
-// ── Yahoo Finance API ──
+// ── Yahoo Finance API (with crumb auth) ──
+
+let _yahooCrumb = null;
+let _yahooCookie = null;
+let _crumbExpiry = 0;
+
+async function getYahooCrumb() {
+  // Cache crumb for 1 hour
+  if (_yahooCrumb && _yahooCookie && Date.now() < _crumbExpiry) {
+    return { crumb: _yahooCrumb, cookie: _yahooCookie };
+  }
+
+  try {
+    // Step 1: Get consent cookie
+    const initResp = await fetch('https://fc.yahoo.com', {
+      headers: { 'User-Agent': UA },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(8000),
+    });
+    const setCookie = initResp.headers.get('set-cookie') || '';
+
+    // Step 2: Get crumb using cookie
+    const crumbResp = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+      headers: {
+        'User-Agent': UA,
+        'Cookie': setCookie.split(';')[0],
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (crumbResp.ok) {
+      _yahooCrumb = await crumbResp.text();
+      _yahooCookie = setCookie.split(';')[0];
+      _crumbExpiry = Date.now() + 3600000; // 1 hour
+      return { crumb: _yahooCrumb, cookie: _yahooCookie };
+    }
+  } catch (e) {
+    console.error('[Yahoo Crumb Error]', e.message);
+  }
+  return { crumb: null, cookie: null };
+}
 
 async function yahooQuoteBatch(symbols) {
   if (typeof symbols === 'string') symbols = [symbols];
@@ -37,27 +77,74 @@ async function yahooQuoteBatch(symbols) {
   for (const s of symbols) out[s] = { price: null, pct: null, prev: null, change: null, state: null };
 
   try {
-    const url = `${YAHOO_QUOTE_URL}?symbols=${symbols.join(',')}&lang=en-US&region=US`;
-    const resp = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(10000) });
-    const data = await resp.json();
-    for (const item of (data?.quoteResponse?.result || [])) {
-      const s = item.symbol;
-      if (out[s]) {
-        out[s].price = item.regularMarketPrice ?? null;
-        out[s].pct = item.regularMarketChangePercent ?? null;
-        out[s].prev = item.regularMarketPreviousClose ?? null;
-        out[s].change = item.regularMarketChange ?? null;
-        out[s].state = item.marketState ?? null;
-        out[s].name = item.shortName ?? item.longName ?? s;
-        out[s].volume = item.regularMarketVolume ?? null;
-        out[s].marketCap = item.marketCap ?? null;
-        out[s].fiftyTwoWeekHigh = item.fiftyTwoWeekHigh ?? null;
-        out[s].fiftyTwoWeekLow = item.fiftyTwoWeekLow ?? null;
-        out[s].forwardPE = item.forwardPE ?? null;
-        out[s].trailingPE = item.trailingPE ?? null;
-        out[s].dividendYield = item.dividendYield ?? null;
-        out[s].epsTrailingTwelveMonths = item.epsTrailingTwelveMonths ?? null;
-      }
+    // Try v7 with crumb auth first
+    const { crumb, cookie } = await getYahooCrumb();
+    const headers = { 'User-Agent': UA };
+    if (cookie) headers['Cookie'] = cookie;
+
+    // Try both query hosts
+    for (const host of ['query2', 'query1']) {
+      let url = `https://${host}.finance.yahoo.com/v7/finance/quote?symbols=${symbols.join(',')}`;
+      if (crumb) url += `&crumb=${encodeURIComponent(crumb)}`;
+
+      try {
+        const resp = await fetch(url, { headers, signal: AbortSignal.timeout(10000) });
+        if (!resp.ok) continue;
+
+        const data = await resp.json();
+        for (const item of (data?.quoteResponse?.result || [])) {
+          const s = item.symbol;
+          if (out[s]) {
+            out[s].price = item.regularMarketPrice ?? null;
+            out[s].pct = item.regularMarketChangePercent ?? null;
+            out[s].prev = item.regularMarketPreviousClose ?? null;
+            out[s].change = item.regularMarketChange ?? null;
+            out[s].state = item.marketState ?? null;
+            out[s].name = item.shortName ?? item.longName ?? s;
+            out[s].volume = item.regularMarketVolume ?? null;
+            out[s].marketCap = item.marketCap ?? null;
+            out[s].fiftyTwoWeekHigh = item.fiftyTwoWeekHigh ?? null;
+            out[s].fiftyTwoWeekLow = item.fiftyTwoWeekLow ?? null;
+            out[s].forwardPE = item.forwardPE ?? null;
+            out[s].trailingPE = item.trailingPE ?? null;
+            out[s].dividendYield = item.dividendYield ?? null;
+            out[s].epsTrailingTwelveMonths = item.epsTrailingTwelveMonths ?? null;
+          }
+        }
+
+        const hasData = symbols.some(s => out[s].price != null);
+        if (hasData) return out;
+      } catch { continue; }
+    }
+
+    // Fallback: use v8 chart endpoint per-symbol
+    console.log('[Yahoo] v7 failed on both hosts, falling back to v8 chart...');
+    for (const sym of symbols) {
+      try {
+        let chartUrl = `https://query2.finance.yahoo.com/v8/finance/chart/${sym}?range=5d&interval=1d&includePrePost=false`;
+        if (crumb) chartUrl += `&crumb=${encodeURIComponent(crumb)}`;
+
+        const chartResp = await fetch(chartUrl, { headers, signal: AbortSignal.timeout(8000) });
+        if (!chartResp.ok) continue;
+        const chartData = await chartResp.json();
+        const meta = chartData?.chart?.result?.[0]?.meta;
+        if (!meta) continue;
+
+        out[sym].price = meta.regularMarketPrice ?? null;
+        out[sym].prev = meta.previousClose ?? meta.chartPreviousClose ?? null;
+        out[sym].state = meta.marketState ?? null;
+        out[sym].name = meta.shortName ?? meta.longName ?? sym;
+
+        if (out[sym].price != null && out[sym].prev != null && out[sym].prev > 0) {
+          out[sym].change = out[sym].price - out[sym].prev;
+          out[sym].pct = (out[sym].change / out[sym].prev) * 100;
+        }
+
+        // v8 meta has some extra fields
+        out[sym].fiftyTwoWeekHigh = meta.fiftyTwoWeekHigh ?? null;
+        out[sym].fiftyTwoWeekLow = meta.fiftyTwoWeekLow ?? null;
+        out[sym].volume = meta.regularMarketVolume ?? null;
+      } catch { continue; }
     }
   } catch (e) {
     console.error('[Yahoo Quote Error]', e.message);
@@ -67,25 +154,39 @@ async function yahooQuoteBatch(symbols) {
 
 async function yahooChart(symbol, range = '6mo', interval = '1d') {
   try {
-    const url = `${YAHOO_CHART_URL}/${symbol}?range=${range}&interval=${interval}&includePrePost=false`;
-    const resp = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) });
-    const data = await resp.json();
-    const result = data?.chart?.result?.[0];
-    if (!result) return null;
+    const { crumb, cookie } = await getYahooCrumb();
+    const headers = { 'User-Agent': UA };
+    if (cookie) headers['Cookie'] = cookie;
 
-    const timestamps = result.timestamp || [];
-    const ohlcv = result.indicators?.quote?.[0] || {};
-    const rows = [];
-    for (let i = 0; i < timestamps.length; i++) {
-      const o = ohlcv.open?.[i], h = ohlcv.high?.[i], l = ohlcv.low?.[i], c = ohlcv.close?.[i], v = ohlcv.volume?.[i];
-      if (c != null) {
-        rows.push({
-          date: new Date(timestamps[i] * 1000),
-          open: o, high: h, low: l, close: c, volume: v || 0
-        });
-      }
+    // Try query1 first, then query2
+    for (const host of ['query1', 'query2']) {
+      try {
+        let url = `https://${host}.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}&includePrePost=false`;
+        if (crumb) url += `&crumb=${encodeURIComponent(crumb)}`;
+
+        const resp = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+        if (!resp.ok) continue;
+
+        const data = await resp.json();
+        const result = data?.chart?.result?.[0];
+        if (!result) continue;
+
+        const timestamps = result.timestamp || [];
+        const ohlcv = result.indicators?.quote?.[0] || {};
+        const rows = [];
+        for (let i = 0; i < timestamps.length; i++) {
+          const o = ohlcv.open?.[i], h = ohlcv.high?.[i], l = ohlcv.low?.[i], c = ohlcv.close?.[i], v = ohlcv.volume?.[i];
+          if (c != null) {
+            rows.push({
+              date: new Date(timestamps[i] * 1000),
+              open: o, high: h, low: l, close: c, volume: v || 0
+            });
+          }
+        }
+        if (rows.length > 0) return rows;
+      } catch { continue; }
     }
-    return rows;
+    return null;
   } catch (e) {
     console.error(`[Yahoo Chart Error] ${symbol}:`, e.message);
     return null;
@@ -846,8 +947,16 @@ function formatMoonshots(picks) {
 
 async function yahooFundamentals(ticker) {
   try {
-    const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=defaultKeyStatistics,financialData,summaryDetail`;
-    const resp = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) });
+    const { crumb, cookie } = await getYahooCrumb();
+    const headers = { 'User-Agent': UA };
+    if (cookie) headers['Cookie'] = cookie;
+
+    let url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=defaultKeyStatistics,financialData,summaryDetail`;
+    if (crumb) url += `&crumb=${encodeURIComponent(crumb)}`;
+
+    const resp = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return null;
+
     const data = await resp.json();
     const ks = data?.quoteSummary?.result?.[0]?.defaultKeyStatistics || {};
     const fd = data?.quoteSummary?.result?.[0]?.financialData || {};

@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VELLE.AI</title>
+<link rel="icon" type="image/x-icon" href="/assets/icon.ico">
+<link rel="icon" type="image/png" sizes="601x601" href="/assets/icon.png">
+<link rel="apple-touch-icon" href="/assets/icon.png">
+<meta name="theme-color" content="#0a0a1a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
@@ -707,6 +711,35 @@
   }
 
   /* Achievement toast */
+  .reminder-toast {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #1a1a2e, #0d0d14);
+    border: 2px solid #f59e0b;
+    border-radius: 16px;
+    padding: 24px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 0 60px #f59e0b55, 0 0 200px #f59e0b22, 0 8px 40px rgba(0,0,0,0.8);
+    z-index: 10001;
+    animation: reminderPulse 1s ease-in-out infinite alternate, reminderSlide 0.3s ease-out;
+    min-width: 340px;
+    max-width: 500px;
+    color: var(--text-primary, #e0e0e0);
+    font-family: var(--font-body, 'JetBrains Mono', monospace);
+  }
+  @keyframes reminderPulse {
+    from { box-shadow: 0 0 60px #f59e0b55, 0 0 200px #f59e0b22; border-color: #f59e0b; }
+    to { box-shadow: 0 0 80px #f59e0b88, 0 0 300px #f59e0b33; border-color: #fbbf24; }
+  }
+  @keyframes reminderSlide {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+
   .achievement-toast {
     position: fixed;
     top: 20px;
@@ -1116,10 +1149,42 @@ function handleMessage(msg) {
 
     case 'reminder_fired':
       addSystemMessage(`⏰ **REMINDER:** ${msg.content}`);
-      // Browser notification if available
-      if (Notification.permission === 'granted') {
-        new Notification('VELLE.AI Reminder', { body: msg.content, icon: '⏰' });
-      }
+      // Show persistent reminder toast
+      showReminderToast(msg.content);
+      // Browser/Electron notification
+      try {
+        if (window.electronAPI?.isElectron) {
+          // Native Windows toast via Electron
+          window.electronAPI.notify('⏰ VELLE.AI Reminder', msg.content);
+        } else if ('Notification' in window && Notification.permission === 'granted') {
+          const n = new Notification('⏰ VELLE.AI Reminder', {
+            body: msg.content,
+            icon: '/assets/icon.png',
+            requireInteraction: true,
+            tag: 'reminder-' + (msg.id || Date.now()),
+          });
+          n.onclick = () => { window.focus(); n.close(); };
+        }
+      } catch {}
+      // Play alert sound
+      try {
+        const audio = new AudioContext();
+        const playTone = (freq, start, dur) => {
+          const osc = audio.createOscillator();
+          const gain = audio.createGain();
+          osc.connect(gain);
+          gain.connect(audio.destination);
+          osc.frequency.value = freq;
+          osc.type = 'sine';
+          gain.gain.setValueAtTime(0.3, audio.currentTime + start);
+          gain.gain.exponentialRampToValueAtTime(0.01, audio.currentTime + start + dur);
+          osc.start(audio.currentTime + start);
+          osc.stop(audio.currentTime + start + dur);
+        };
+        playTone(880, 0, 0.15);
+        playTone(1100, 0.18, 0.15);
+        playTone(880, 0.36, 0.2);
+      } catch {}
       // TTS
       if (typeof voice !== 'undefined' && voice.ttsEnabled) {
         speak(`Reminder: ${msg.content}`);
@@ -1631,6 +1696,22 @@ function loadChartRange(ticker, range) {
 }
 
 // ── Achievement Toast ──
+
+function showReminderToast(content) {
+  const toast = document.createElement('div');
+  toast.className = 'reminder-toast';
+  toast.innerHTML = `
+    <span style="font-size:2em">⏰</span>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:0.7em;text-transform:uppercase;letter-spacing:2px;color:#f59e0b;margin-bottom:4px">Reminder</div>
+      <div style="font-size:1.1em;font-weight:600">${content}</div>
+    </div>
+    <button onclick="this.parentElement.remove()" style="background:none;border:1px solid #444;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.85em">OK</button>
+  `;
+  document.body.appendChild(toast);
+  // Auto-dismiss after 30 seconds
+  setTimeout(() => { if (toast.parentElement) toast.remove(); }, 30000);
+}
 
 function showAchievementToast(icon, name, desc) {
   const toast = document.createElement('div');

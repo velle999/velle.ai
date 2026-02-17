@@ -28,6 +28,7 @@
       "personalities/**/*",
       "memory/**/*",
       "electron.cjs",
+      "preload.cjs",
       "package.json",
       "node_modules/**/*"
     ],

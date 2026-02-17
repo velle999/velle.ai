@@ -150,6 +150,12 @@ export function parseReminderTime(text) {
   const now = new Date();
   let due = null;
 
+  // Helper: format Date as local "YYYY-MM-DD HH:MM:SS"
+  const toLocal = (d) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
   // "in X minutes/hours/seconds"
   const inMatch = text.match(/in\s+(\d+)\s*(min(?:ute)?s?|hours?|hrs?|seconds?|secs?|days?)/i);
   if (inMatch) {
@@ -160,7 +166,7 @@ export function parseReminderTime(text) {
     else if (unit.startsWith('h')) due.setHours(due.getHours() + n);
     else if (unit.startsWith('s')) due.setSeconds(due.getSeconds() + n);
     else if (unit.startsWith('d')) due.setDate(due.getDate() + n);
-    return due.toISOString().replace('T', ' ').slice(0, 19);
+    return toLocal(due);
   }
 
   // "at HH:MM" or "at H:MMam/pm"
@@ -174,7 +180,7 @@ export function parseReminderTime(text) {
     if (ampm === 'am' && h === 12) h = 0;
     due.setHours(h, m, 0, 0);
     if (due <= now) due.setDate(due.getDate() + 1); // next day if past
-    return due.toISOString().replace('T', ' ').slice(0, 19);
+    return toLocal(due);
   }
 
   // "tomorrow"
@@ -189,7 +195,7 @@ export function parseReminderTime(text) {
     } else {
       due.setHours(9, 0, 0, 0); // default 9am
     }
-    return due.toISOString().replace('T', ' ').slice(0, 19);
+    return toLocal(due);
   }
 
   return null;

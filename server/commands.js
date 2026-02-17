@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // Add your own commands here. Each entry maps an action name
 // to a handler function that returns { success, result }.
 
-const COMMAND_HANDLERS = {
+export const COMMAND_HANDLERS = {
 
   // ═══════════════════════════════════
   //  KABUNEKO QUANT COMMANDS
@@ -30,21 +30,21 @@ const COMMAND_HANDLERS = {
   },
 
   stock_quote: async (params) => {
-    const ticker = params.ticker?.toUpperCase();
+    const ticker = params.ticker?.replace(/\s/g, '').toUpperCase();
     if (!ticker) return { success: false, result: 'Need a ticker. Try {"action": "stock_quote", "ticker": "NVDA"}' };
     const q = await getQuote(ticker);
     return { success: !q.error, result: q.error ? q.error : formatQuote(q), data: q };
   },
 
   stock_analyze: async (params) => {
-    const ticker = params.ticker?.toUpperCase();
+    const ticker = params.ticker?.replace(/\s/g, '').toUpperCase();
     if (!ticker) return { success: false, result: 'Need a ticker.' };
     const a = await analyzeStock(ticker);
     return { success: !a.error, result: a.error ? a.error : formatAnalysis(a), data: a };
   },
 
   stock_chart: async (params) => {
-    const ticker = params.ticker?.toUpperCase();
+    const ticker = params.ticker?.replace(/\s/g, '').toUpperCase();
     const range = params.range || '6mo';
     if (!ticker) return { success: false, result: 'Need a ticker.' };
     const chart = await getChartData(ticker, range);
@@ -64,14 +64,14 @@ const COMMAND_HANDLERS = {
   },
 
   backtest: async (params) => {
-    const ticker = params.ticker?.toUpperCase();
+    const ticker = params.ticker?.replace(/\s/g, '').toUpperCase();
     if (!ticker) return { success: false, result: 'Need a ticker.' };
     const bt = await backtestRSI(ticker, params.buy_rsi || 30, params.sell_rsi || 70);
     return { success: !bt.error, result: bt.error ? bt.error : formatBacktest(bt), data: bt };
   },
 
   sentiment: async (params) => {
-    const ticker = params.ticker?.toUpperCase();
+    const ticker = params.ticker?.replace(/\s/g, '').toUpperCase();
     if (!ticker) return { success: false, result: 'Need a ticker.' };
     const s = await getSentiment(ticker);
     return { success: true, result: formatSentiment(s), data: s };
@@ -137,12 +137,13 @@ const COMMAND_HANDLERS = {
     const timeStr = params.time || params.due_at || params.when || 'in 5 minutes';
 
     // If a real reminder engine is injected, use it
-    if (COMMAND_HANDLERS._reminderEngine) {
+    const engine = COMMAND_HANDLERS._reminderEngine;
+    if (engine) {
       const { parseReminderTime, parseRepeat } = await import('./advanced.js');
       const dueAt = parseReminderTime(timeStr) || parseReminderTime(`in ${timeStr}`);
       if (dueAt) {
         const repeat = parseRepeat(timeStr);
-        const rem = COMMAND_HANDLERS._reminderEngine.add(text, dueAt, repeat);
+        const rem = engine.add(text, dueAt, repeat);
         return { success: true, result: `⏰ Reminder set: "${rem.content}" — ${rem.due_at}${rem.repeat ? ` (${rem.repeat})` : ''}` };
       }
     }
@@ -195,8 +196,9 @@ const COMMAND_HANDLERS = {
   // ═══════════════════════════════════
 
   add_todo: async (params) => {
-    if (!COMMAND_HANDLERS._todoManager) return { success: false, result: 'Todo system not initialized' };
-    const t = COMMAND_HANDLERS._todoManager.add(
+    const mgr = COMMAND_HANDLERS._todoManager;
+    if (!mgr) return { success: false, result: 'Todo system not initialized' };
+    const t = mgr.add(
       params.content || params.text || params.task,
       params.project || 'inbox',
       params.priority || 2,
@@ -207,39 +209,45 @@ const COMMAND_HANDLERS = {
   },
 
   complete_todo: async (params) => {
-    if (!COMMAND_HANDLERS._todoManager) return { success: false, result: 'Todo system not initialized' };
+    const mgr = COMMAND_HANDLERS._todoManager;
+    if (!mgr) return { success: false, result: 'Todo system not initialized' };
     const id = params.id || params.task_id;
-    const t = COMMAND_HANDLERS._todoManager.complete(id);
+    const t = mgr.complete(id);
     return { success: true, result: t ? `✅ Completed: #${t.id} ${t.content}` : '⚠ Task not found' };
   },
 
   add_habit: async (params) => {
-    if (!COMMAND_HANDLERS._habitTracker) return { success: false, result: 'Habit system not initialized' };
-    const h = COMMAND_HANDLERS._habitTracker.addHabit(params.name || params.habit, params.icon || '✅');
+    const mgr = COMMAND_HANDLERS._habitTracker;
+    if (!mgr) return { success: false, result: 'Habit system not initialized' };
+    const h = mgr.addHabit(params.name || params.habit, params.icon || '✅');
     return { success: true, result: `🔄 Habit created: ${h.name}` };
   },
 
   check_habit: async (params) => {
-    if (!COMMAND_HANDLERS._habitTracker) return { success: false, result: 'Habit system not initialized' };
-    const r = COMMAND_HANDLERS._habitTracker.checkIn(params.id || params.habit_id);
+    const mgr = COMMAND_HANDLERS._habitTracker;
+    if (!mgr) return { success: false, result: 'Habit system not initialized' };
+    const r = mgr.checkIn(params.id || params.habit_id);
     return { success: true, result: r.checked ? `✅ Checked in!` : '⚠ Already checked today' };
   },
 
   add_goal: async (params) => {
-    if (!COMMAND_HANDLERS._goalTracker) return { success: false, result: 'Goal system not initialized' };
-    const g = COMMAND_HANDLERS._goalTracker.addGoal(params.title || params.goal, params.description);
+    const mgr = COMMAND_HANDLERS._goalTracker;
+    if (!mgr) return { success: false, result: 'Goal system not initialized' };
+    const g = mgr.addGoal(params.title || params.goal, params.description);
     return { success: true, result: `🎯 Goal set: #${g.id} ${g.title}` };
   },
 
   save_bookmark: async (params) => {
-    if (!COMMAND_HANDLERS._bookmarks) return { success: false, result: 'Bookmark system not initialized' };
-    const b = COMMAND_HANDLERS._bookmarks.save(params.content || params.text, params.note, params.tags);
+    const mgr = COMMAND_HANDLERS._bookmarks;
+    if (!mgr) return { success: false, result: 'Bookmark system not initialized' };
+    const b = mgr.save(params.content || params.text, params.note, params.tags);
     return { success: true, result: `🔖 Bookmarked: #${b.id}` };
   },
 
   save_knowledge: async (params) => {
-    if (!COMMAND_HANDLERS._knowledgeBase) return { success: false, result: 'KB not initialized' };
-    const item = COMMAND_HANDLERS._knowledgeBase.add(params.title, params.content, params.type || 'note', params.language, params.tags);
+    const mgr = COMMAND_HANDLERS._knowledgeBase;
+    if (!mgr) return { success: false, result: 'KB not initialized' };
+    const item = mgr.add(params.title, params.content, params.type || 'note', params.language, params.tags);
     return { success: true, result: `📚 Saved: #${item.id} ${item.title}` };
   },
 };

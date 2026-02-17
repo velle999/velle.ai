@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { MemoryManager } from './memory.js';
-import { CommandExecutor } from './commands.js';
+import { CommandExecutor, COMMAND_HANDLERS } from './commands.js';
 import {
   ReminderEngine, parseReminderTime, parseRepeat,
   MoodTracker,
@@ -78,13 +78,13 @@ const briefing = new BriefingEngine(memory.db);
 reminders.startAll();
 reminders.startPeriodicCheck();
 
-// Inject engines into command executor so LLM-triggered actions work
-commander.handlers._reminderEngine = reminders;
-commander.handlers._todoManager = todos;
-commander.handlers._habitTracker = habits;
-commander.handlers._goalTracker = goals;
-commander.handlers._bookmarks = bookmarks;
-commander.handlers._knowledgeBase = kb;
+// Inject engines into command handlers so LLM-triggered actions work
+COMMAND_HANDLERS._reminderEngine = reminders;
+COMMAND_HANDLERS._todoManager = todos;
+COMMAND_HANDLERS._habitTracker = habits;
+COMMAND_HANDLERS._goalTracker = goals;
+COMMAND_HANDLERS._bookmarks = bookmarks;
+COMMAND_HANDLERS._knowledgeBase = kb;
 
 const TYPE_ICONS = { note: '📝', snippet: '💻', link: '🔗', reference: '📚' };
 
@@ -1134,6 +1134,21 @@ async function handleSlashCommand(ws, content, sessionId) {
           result = `🗑️ KB item #${id} deleted.`;
           break;
         }
+        // Quick-add: /kb Title | Content (without "add" keyword)
+        const fullText = parts.slice(1).join(' ');
+        if (fullText.includes('|')) {
+          const pipeIdx = fullText.indexOf('|');
+          const title = fullText.slice(0, pipeIdx).trim();
+          const content = fullText.slice(pipeIdx + 1).trim();
+          if (title && content) {
+            let type = 'note';
+            if (/^https?:\/\//i.test(content)) type = 'link';
+            else if (/```|function |const |import |def |class /i.test(content)) type = 'snippet';
+            const item = kb.add(title, content, type);
+            result = `📚 Saved! ${TYPE_ICONS[type] || '📝'} **#${item.id} ${item.title}**`;
+            break;
+          }
+        }
         break;
       }
 
@@ -1413,6 +1428,10 @@ Use this data in your response. If the user wants deeper analysis, suggest they 
                 action: cmd.action,
                 ...cmdResult
               }));
+              // If it's a chart command, also push chart data to render
+              if (cmd.action === 'stock_chart' && cmdResult.data && !cmdResult.data.error) {
+                ws.send(JSON.stringify({ type: 'chart_data', data: cmdResult.data }));
+              }
             }
 
             // Check for "remember" patterns in user message

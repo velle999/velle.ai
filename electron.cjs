@@ -1,8 +1,10 @@
 // ⚡ VELLE.AI — Electron Wrapper
 // Build: npx electron-builder --win
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, shell, Notification: ElectronNotification } = require('electron');
 const path = require('path');
+
+const { ipcMain } = require('electron');
 
 let mainWindow = null;
 let tray = null;
@@ -77,6 +79,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(app.getAppPath(), 'preload.cjs'),
     },
   });
 
@@ -94,11 +97,8 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  mainWindow.on('close', (event) => {
-    if (!app.isQuitting) {
-      event.preventDefault();
-      mainWindow.hide();
-    }
+  mainWindow.on('close', () => {
+    app.exit(0);
   });
 
   mainWindow.on('closed', () => {
@@ -134,14 +134,7 @@ function createTray() {
     {
       label: 'Quit',
       click: () => {
-        app.isQuitting = true;
-        if (serverModule?.shutdown) {
-          try { serverModule.shutdown(); } catch {}
-        }
-        if (mainWindow) mainWindow.destroy();
-        if (tray) tray.destroy();
-        setTimeout(() => process.exit(0), 1000);
-        app.quit();
+        app.exit(0);
       },
     },
   ]);
@@ -158,6 +151,21 @@ app.whenReady().then(async () => {
   console.log('[VELLE.AI] App path:', app.getAppPath());
   console.log('[VELLE.AI] Packaged:', app.isPackaged);
 
+  // Handle native notification requests from renderer
+  ipcMain.on('show-notification', (event, { title, body }) => {
+    const iconPath = getIconPath();
+    const notif = new ElectronNotification({
+      title: title || 'VELLE.AI',
+      body: body || '',
+      icon: iconPath,
+      urgency: 'critical',
+    });
+    notif.on('click', () => {
+      if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+    });
+    notif.show();
+  });
+
   await startServer();
 
   // Give server a moment to bind
@@ -167,19 +175,8 @@ app.whenReady().then(async () => {
   createTray();
 });
 
-app.on('window-all-closed', () => { /* stay in tray */ });
+app.on('window-all-closed', () => { app.exit(0); });
 
-app.on('before-quit', () => {
-  // Shut down server
-  if (serverModule?.shutdown) {
-    try { serverModule.shutdown(); } catch {}
-  }
-  // Force kill no matter what
-  setTimeout(() => process.exit(0), 1500);
-});
-
-app.on('quit', () => {
-  process.exit(0);
-});
+app.on('before-quit', () => { app.exit(0); });
 
 app.on('activate', () => { if (!mainWindow) createWindow(); });
