@@ -1,24 +1,3 @@
-// MUST BE LINES 1-10 - CRITICAL FOR PKG + ESM
-if (typeof process !== 'undefined' && process.pkg) {
-  // Fix __dirname and path resolution
-  const path = require('path');
-  const os = require('os');
-  
-  // Redirect DB to writable location
-  process.env.DB_PATH = path.join(
-    os.platform() === 'win32' ? process.env.APPDATA : os.homedir(),
-    'velle-ai',
-    'velle-ai.db'
-  );
-  
-  // Fix module resolution for ESM in pkg
-  require = require('esm')(module);
-  global.__filename = __filename;
-  global.__dirname = __dirname;
-  
-  // Force UTC for Feb 17, 2026 reminders
-  process.env.TZ = 'UTC';
-}
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
@@ -115,6 +94,7 @@ const personalities = JSON.parse(readFileSync(profilesPath, 'utf-8'));
 
 app.use(express.json());
 app.use(express.static(join(ROOT, 'public')));
+app.use('/assets', express.static(join(ROOT, 'assets')));
 
 // ── REST API ──
 
@@ -1586,3 +1566,35 @@ server.listen(CONFIG.port, () => {
   ╚══════════════════════════════════════════╝
   `);
 });
+
+// ── Graceful Shutdown (for Electron and Ctrl+C) ──
+
+function shutdown() {
+  console.log('[VELLE.AI] Shutting down...');
+
+  // Clear ALL timers (intervals + timeouts keeping process alive)
+  const maxId = setTimeout(() => {}, 0);
+  for (let i = 0; i < maxId; i++) {
+    clearTimeout(i);
+    clearInterval(i);
+  }
+
+  // Close all WebSocket connections
+  wss.clients.forEach(ws => {
+    try { ws.close(); } catch {}
+  });
+
+  try { wss.close(); } catch {}
+  try { server.close(); } catch {}
+  try { memory.db.close(); } catch {}
+
+  console.log('[VELLE.AI] Goodbye.');
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+process.on('SIGHUP', shutdown);
+
+// Export for Electron to call on quit
+export { server, wss, shutdown };

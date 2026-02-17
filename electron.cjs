@@ -6,8 +6,6 @@ const path = require('path');
 
 let mainWindow = null;
 let tray = null;
-let serverInstance = null;  // Store Express server for cleanup
-let dbInstance = null;      // Store Database for cleanup
 
 const PORT = process.env.PORT || 3000;
 const MODEL = process.env.MODEL || 'qwen3:8b';
@@ -31,18 +29,15 @@ app.on('second-instance', () => {
   }
 });
 
+let serverModule = null;
+
 async function startServer() {
   const serverPath = path.join(app.getAppPath(), 'server', 'index.js');
   console.log('[VELLE.AI] Loading server from:', serverPath);
 
   try {
     const fileUrl = 'file:///' + serverPath.replace(/\\/g, '/');
-    const serverModule = await import(fileUrl);
-    
-    // Capture exported server and db instances for cleanup
-    serverInstance = serverModule.serverInstance || null;
-    dbInstance = serverModule.dbInstance || null;
-    
+    serverModule = await import(fileUrl);
     console.log('[VELLE.AI] Server loaded');
   } catch (err) {
     console.error('[VELLE.AI] Server failed to start:', err.message);
@@ -57,6 +52,7 @@ function getIconPath() {
     path.join(base, 'assets', 'icon.png'),
     path.join(base, 'public', 'assets', 'icon.png'),
   ];
+  // Also check unpacked resources
   if (process.resourcesPath) {
     candidates.push(path.join(process.resourcesPath, 'assets', 'icon.png'));
   }
@@ -137,7 +133,16 @@ function createTray() {
     { type: 'separator' },
     {
       label: 'Quit',
-      click: () => { app.isQuitting = true; app.quit(); },
+      click: () => {
+        app.isQuitting = true;
+        if (serverModule?.shutdown) {
+          try { serverModule.shutdown(); } catch {}
+        }
+        if (mainWindow) mainWindow.destroy();
+        if (tray) tray.destroy();
+        setTimeout(() => process.exit(0), 1000);
+        app.quit();
+      },
     },
   ]);
 
@@ -149,58 +154,13 @@ function createTray() {
   });
 }
 
-// ── GRACEFUL SHUTDOWN ──
-async function cleanupAndQuit() {
-  console.log('[VELLE.AI] Shutting down...');
-
-  // 1. Close Express server
-  if (serverInstance) {
-    await new Promise((resolve) => {
-      serverInstance.close(() => {
-        console.log('[VELLE.AI] HTTP server closed');
-        resolve();
-      });
-    });
-  }
-
-  // 2. Close SQLite database
-  if (dbInstance && typeof dbInstance.close === 'function') {
-    try {
-      dbInstance.close();
-      console.log('[VELLE.AI] Database closed');
-    } catch (err) {
-      console.error('[VELLE.AI] Database close error:', err.message);
-    }
-  }
-
-  // 3. Destroy tray
-  if (tray) {
-    tray.destroy();
-    tray = null;
-  }
-
-  // 4. Nullify window
-  mainWindow = null;
-
-  // 5. Force quit
-  app.quit();
-}
-
-// Register shutdown handlers
-app.on('before-quit', (e) => {
-  e.preventDefault();
-  cleanupAndQuit();
-});
-
-process.on('SIGINT', () => cleanupAndQuit());
-process.on('SIGTERM', () => cleanupAndQuit());
-
-// ── APP LIFECYCLE ──
 app.whenReady().then(async () => {
   console.log('[VELLE.AI] App path:', app.getAppPath());
   console.log('[VELLE.AI] Packaged:', app.isPackaged);
 
   await startServer();
+
+  // Give server a moment to bind
   await new Promise(r => setTimeout(r, 1500));
 
   createWindow();
@@ -208,4 +168,18 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => { /* stay in tray */ });
+
+app.on('before-quit', () => {
+  // Shut down server
+  if (serverModule?.shutdown) {
+    try { serverModule.shutdown(); } catch {}
+  }
+  // Force kill no matter what
+  setTimeout(() => process.exit(0), 1500);
+});
+
+app.on('quit', () => {
+  process.exit(0);
+});
+
 app.on('activate', () => { if (!mainWindow) createWindow(); });
