@@ -710,7 +710,8 @@ export function formatFileResults(results, query) {
       : `${(r.size / 1048576).toFixed(1)}MB`;
 
     const icon = r.match_type === 'content' ? '📄' : '📁';
-    text += `${icon} **${r.name}** (${sizeStr})\n`;
+    const encodedPath = encodeURIComponent(r.path);
+    text += `${icon} **${r.name}** (${sizeStr}) [📂 open](velle://open-file?path=${encodedPath}) [📁 folder](velle://open-folder?path=${encodedPath})\n`;
     text += `   \`${r.relative || r.path}\`\n`;
     if (r.snippet) {
       text += `   _...${r.snippet}..._\n`;

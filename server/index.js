@@ -447,6 +447,40 @@ app.get('/api/achievements/progress', (req, res) => res.json(achievements.getPro
 app.get('/api/insights', (req, res) => res.json(insightEngine.generate()));
 
 // Daily Briefing
+// ── File Open API ──
+
+app.post('/api/files/open', async (req, res) => {
+  const filePath = req.body.path;
+  if (!filePath) return res.status(400).json({ error: 'No path provided' });
+  try {
+    const { execSync } = (await import('child_process'));
+    const cmd = process.platform === 'win32' ? `start "" "${filePath}"`
+      : process.platform === 'darwin' ? `open "${filePath}"`
+      : `xdg-open "${filePath}"`;
+    execSync(cmd, { stdio: 'ignore', shell: true });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/files/open-folder', async (req, res) => {
+  const filePath = req.body.path;
+  if (!filePath) return res.status(400).json({ error: 'No path provided' });
+  try {
+    const { dirname } = (await import('path'));
+    const { execSync } = (await import('child_process'));
+    const folder = dirname(filePath);
+    const cmd = process.platform === 'win32' ? `explorer "${folder}"`
+      : process.platform === 'darwin' ? `open "${folder}"`
+      : `xdg-open "${folder}"`;
+    execSync(cmd, { stdio: 'ignore', shell: true });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/briefing', async (req, res) => {
   try {
     const result = await briefing.generate({

@@ -740,6 +740,22 @@
     to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   }
 
+  .file-link {
+    color: #00f0ff;
+    text-decoration: none;
+    cursor: pointer;
+    padding: 1px 6px;
+    border: 1px solid #00f0ff44;
+    border-radius: 4px;
+    font-size: 0.85em;
+    transition: all 0.2s;
+  }
+  .file-link:hover {
+    background: #00f0ff22;
+    border-color: #00f0ff88;
+    text-shadow: 0 0 8px #00f0ff;
+  }
+
   .achievement-toast {
     position: fixed;
     top: 20px;
@@ -1308,8 +1324,41 @@ function formatContent(text) {
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     // Italic
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Markdown links [text](url) — make velle:// links clickable
+    .replace(/\[([^\]]+)\]\(velle:\/\/open-file\?path=([^)]+)\)/g,
+      '<a href="#" class="file-link" onclick="openFile(decodeURIComponent(\'$2\')); return false;">$1</a>')
+    .replace(/\[([^\]]+)\]\(velle:\/\/open-folder\?path=([^)]+)\)/g,
+      '<a href="#" class="file-link" onclick="openFolder(decodeURIComponent(\'$2\')); return false;">$1</a>')
+    // Regular markdown links
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     // Line breaks
     .replace(/\n/g, '<br>');
+}
+
+async function openFile(filePath) {
+  try {
+    const res = await fetch('/api/files/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath }),
+    });
+    if (!res.ok) throw new Error('Failed to open');
+  } catch (e) {
+    addSystemMessage(`⚠ Could not open file: ${e.message}`);
+  }
+}
+
+async function openFolder(filePath) {
+  try {
+    const res = await fetch('/api/files/open-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath }),
+    });
+    if (!res.ok) throw new Error('Failed to open');
+  } catch (e) {
+    addSystemMessage(`⚠ Could not open folder: ${e.message}`);
+  }
 }
 
 // ── Personality Management ──
