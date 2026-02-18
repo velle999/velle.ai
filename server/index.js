@@ -96,6 +96,31 @@ app.use(express.json());
 app.use(express.static(join(ROOT, 'public')));
 app.use('/assets', express.static(join(ROOT, 'assets')));
 
+// ── Model Management ──
+
+app.get('/api/models', async (req, res) => {
+  try {
+    const resp = await fetch(`${CONFIG.ollamaUrl}/api/tags`);
+    const data = await resp.json();
+    const models = (data.models || []).map(m => ({
+      name: m.name,
+      size: m.size ? `${(m.size / 1e9).toFixed(1)}GB` : null,
+      modified: m.modified_at,
+    }));
+    res.json({ current: CONFIG.model, models });
+  } catch (e) {
+    res.json({ current: CONFIG.model, models: [], error: 'Ollama not reachable' });
+  }
+});
+
+app.post('/api/models/switch', (req, res) => {
+  const { model } = req.body;
+  if (!model) return res.status(400).json({ error: 'No model specified' });
+  CONFIG.model = model;
+  console.log(`[VELLE.AI] Model switched to: ${model}`);
+  res.json({ success: true, model });
+});
+
 // ── REST API ──
 
 // Get available personalities

@@ -1,5 +1,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import os from 'os';
 import {
   getMarketSnapshot, formatMarketSnapshot,
   getQuote, formatQuote,
@@ -9,8 +10,10 @@ import {
   backtestRSI, formatBacktest,
   getSentiment, formatSentiment,
   findMoonshots, formatMoonshots,
+  generateIdeas, formatIdeas,
   getChartData,
 } from './quant.js';
+import { parseReminderTime, parseRepeat } from './advanced.js';
 
 const execAsync = promisify(exec);
 
@@ -83,7 +86,6 @@ export const COMMAND_HANDLERS = {
   },
 
   stock_ideas: async (params) => {
-    const { generateIdeas, formatIdeas } = await import('./quant.js');
     const n = params.n || params.per_bucket || 5;
     const ideas = await generateIdeas(n);
     return { success: true, result: formatIdeas(ideas), data: ideas };
@@ -139,7 +141,6 @@ export const COMMAND_HANDLERS = {
     // If a real reminder engine is injected, use it
     const engine = COMMAND_HANDLERS._reminderEngine;
     if (engine) {
-      const { parseReminderTime, parseRepeat } = await import('./advanced.js');
       const dueAt = parseReminderTime(timeStr) || parseReminderTime(`in ${timeStr}`);
       if (dueAt) {
         const repeat = parseRepeat(timeStr);
@@ -152,15 +153,14 @@ export const COMMAND_HANDLERS = {
   },
 
   system_info: async () => {
-    const os = await import('os');
     return {
       success: true,
       result: JSON.stringify({
         platform: process.platform,
-        hostname: os.default.hostname(),
-        uptime: `${Math.floor(os.default.uptime() / 3600)}h ${Math.floor((os.default.uptime() % 3600) / 60)}m`,
-        memory: `${Math.round(os.default.freemem() / 1e9)}GB free / ${Math.round(os.default.totalmem() / 1e9)}GB total`,
-        cpus: os.default.cpus().length + ' cores'
+        hostname: os.hostname(),
+        uptime: `${Math.floor(os.uptime() / 3600)}h ${Math.floor((os.uptime() % 3600) / 60)}m`,
+        memory: `${Math.round(os.freemem() / 1e9)}GB free / ${Math.round(os.totalmem() / 1e9)}GB total`,
+        cpus: os.cpus().length + ' cores'
       }, null, 2)
     };
   },

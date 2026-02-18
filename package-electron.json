@@ -1,6 +1,6 @@
 {
   "name": "velle-ai",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "VELLE.AI — Local AI Companion",
   "main": "electron.cjs",
   "type": "module",
