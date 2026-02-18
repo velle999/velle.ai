@@ -24,7 +24,7 @@ ollama pull qwen3:8b
 3. Launch VELLE.AI
 Run the portable executable
 
-VELLE-AI-1.0.0-portable.exe
+VELLE-AI-1.0.1-portable.exe
 
 
 Admin recommended for full system access features
