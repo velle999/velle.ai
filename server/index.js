@@ -7,6 +7,19 @@ import { fileURLToPath } from 'url';
 import { MemoryManager } from './memory.js';
 import { CommandExecutor, COMMAND_HANDLERS } from './commands.js';
 import {
+  runCode, formatRunResult, RUNNERS,
+  SnippetManager, formatSnippetList,
+  testRegex, formatRegexResult,
+  encodeBase64, decodeBase64, encodeURL, decodeURL,
+  encodeHex, decodeHex, hashText, formatEncodeDecode,
+  jsonPretty, jsonMinify, jsonValidate,
+  diffStrings, formatDiff,
+  scaffoldProject, formatScaffold, TEMPLATES,
+  scanPorts, formatPorts,
+  httpRequest, formatHttpResult,
+  countLines, formatCodeStats,
+} from './coding.js';
+import {
   ReminderEngine, parseReminderTime, parseRepeat,
   MoodTracker,
   SummaryEngine,
@@ -47,9 +60,31 @@ const ROOT = join(__dirname, '..');
 const CONFIG = {
   port: parseInt(process.env.PORT || '3000'),
   ollamaUrl: process.env.OLLAMA_URL || 'http://localhost:11434',
-  model: process.env.MODEL || 'llama3.2',
+  model: process.env.MODEL || 'auto',
   dbPath: join(ROOT, 'memory', 'companion.db'),
 };
+
+// Auto-detect model from Ollama if set to 'auto' or not specified
+async function resolveModel() {
+  if (CONFIG.model !== 'auto') return;
+  try {
+    const resp = await fetch(`${CONFIG.ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    const data = await resp.json();
+    const models = (data.models || []).map(m => m.name);
+    if (models.length > 0) {
+      const preferred = ['qwen3:8b', 'llama3.2', 'llama3.1', 'llama3', 'mistral', 'deepseek-r1'];
+      CONFIG.model = preferred.find(p => models.includes(p)) || models[0];
+      console.log(`[VELLE.AI] Auto-detected model: ${CONFIG.model}`);
+    } else {
+      CONFIG.model = 'qwen3:8b';
+      console.log('[VELLE.AI] No models found, defaulting to qwen3:8b');
+    }
+  } catch {
+    CONFIG.model = 'qwen3:8b';
+    console.log('[VELLE.AI] Ollama not reachable yet, defaulting to qwen3:8b');
+  }
+}
+try { await resolveModel(); } catch { CONFIG.model = 'qwen3:8b'; }
 
 // ── Initialize ──
 
@@ -73,6 +108,7 @@ const kb = new KnowledgeBase(memory.db);
 const achievements = new AchievementEngine(memory.db);
 const insightEngine = new InsightEngine(memory.db);
 const briefing = new BriefingEngine(memory.db);
+const snippets = new SnippetManager(memory.db);
 
 // Start reminder scheduler
 reminders.startAll();
@@ -122,6 +158,62 @@ app.post('/api/models/switch', (req, res) => {
 });
 
 // ── REST API ──
+
+// ── Coding Tools API ──
+
+app.post('/api/code/run', async (req, res) => {
+  const { code, lang } = req.body;
+  if (!code) return res.status(400).json({ error: 'No code provided' });
+  const result = await runCode(code, lang || 'javascript');
+  res.json(result);
+});
+
+app.get('/api/snippets', (req, res) => res.json(snippets.getAll()));
+app.post('/api/snippets', (req, res) => {
+  const { name, code, language, tags } = req.body;
+  if (!name || !code) return res.status(400).json({ error: 'Need name and code' });
+  res.json(snippets.save(name, code, language, tags));
+});
+app.get('/api/snippets/:id', (req, res) => {
+  const s = snippets.get(parseInt(req.params.id));
+  s ? res.json(s) : res.status(404).json({ error: 'Not found' });
+});
+app.delete('/api/snippets/:id', (req, res) => {
+  snippets.delete(parseInt(req.params.id));
+  res.json({ success: true });
+});
+
+app.post('/api/code/regex', (req, res) => {
+  const { pattern, flags, text } = req.body;
+  res.json(testRegex(pattern, flags, text));
+});
+
+app.post('/api/code/json/pretty', (req, res) => res.json(jsonPretty(req.body.text || '')));
+app.post('/api/code/json/minify', (req, res) => res.json(jsonMinify(req.body.text || '')));
+app.post('/api/code/json/validate', (req, res) => res.json(jsonValidate(req.body.text || '')));
+
+app.post('/api/code/encode', (req, res) => {
+  const { text, type } = req.body;
+  const ops = { base64: encodeBase64, url: encodeURL, hex: encodeHex };
+  const fn = ops[type];
+  fn ? res.json({ result: fn(text) }) : res.status(400).json({ error: 'Type: base64, url, hex' });
+});
+app.post('/api/code/decode', (req, res) => {
+  const { text, type } = req.body;
+  const ops = { base64: decodeBase64, url: decodeURL, hex: decodeHex };
+  const fn = ops[type];
+  fn ? res.json({ result: fn(text) }) : res.status(400).json({ error: 'Type: base64, url, hex' });
+});
+app.post('/api/code/hash', (req, res) => {
+  const { text, algo } = req.body;
+  res.json({ result: hashText(text || '', algo || 'sha256') });
+});
+
+app.get('/api/code/ports', async (req, res) => res.json(await scanPorts()));
+app.post('/api/code/http', async (req, res) => {
+  const { url, method, body, headers } = req.body;
+  res.json(await httpRequest(url, method, body, headers));
+});
 
 // Get available personalities
 app.get('/api/personalities', (req, res) => {
@@ -1211,6 +1303,180 @@ async function handleSlashCommand(ws, content, sessionId) {
         break;
       }
 
+      // ── Coding Tools ──
+
+      case 'run':
+      case 'exec': {
+        // /run js console.log("hi")  OR  /run py print("hi")
+        const lang = parts[1] || 'js';
+        const code = parts.slice(2).join(' ');
+        if (!code) { result = `⚠ Usage: \`/run <lang> <code>\`\nLanguages: ${Object.keys(RUNNERS).filter(k => k.length > 2).join(', ')}`; break; }
+        ws.send(JSON.stringify({ type: 'system_msg', content: `▶️ Running ${lang}...` }));
+        const runResult = await runCode(code, lang);
+        result = formatRunResult(runResult);
+        break;
+      }
+
+      case 'snippet':
+      case 'snip': {
+        const sub = parts[1]?.toLowerCase();
+        if (!sub || sub === 'list') {
+          result = formatSnippetList(snippets.getAll());
+          break;
+        }
+        if (sub === 'save' || sub === 'add') {
+          // /snippet save myFunc js | function hello() { return "hi" }
+          const rest = parts.slice(2).join(' ');
+          const pipeIdx = rest.indexOf('|');
+          if (pipeIdx === -1) { result = '⚠ Usage: `/snippet save name lang | code`'; break; }
+          const meta = rest.slice(0, pipeIdx).trim().split(/\s+/);
+          const name = meta[0] || 'unnamed';
+          const lang = meta[1] || 'javascript';
+          const code = rest.slice(pipeIdx + 1).trim();
+          const s = snippets.save(name, code, lang);
+          result = `📦 Snippet saved: **#${s.id} ${s.name}** (${s.language})`;
+          break;
+        }
+        if (sub === 'get' || sub === 'view') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: `/snippet get ID`'; break; }
+          const s = snippets.get(id);
+          if (!s) { result = '⚠ Not found'; break; }
+          result = `📦 **${s.name}** (${s.language})\n\`\`\`${s.language}\n${s.code}\n\`\`\``;
+          break;
+        }
+        if (sub === 'run') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: `/snippet run ID`'; break; }
+          const s = snippets.get(id);
+          if (!s) { result = '⚠ Not found'; break; }
+          ws.send(JSON.stringify({ type: 'system_msg', content: `▶️ Running snippet #${id}...` }));
+          const r = await runCode(s.code, s.language);
+          result = formatRunResult(r);
+          break;
+        }
+        if (sub === 'search' || sub === 'find') {
+          result = formatSnippetList(snippets.search(parts.slice(2).join(' ')));
+          break;
+        }
+        if (sub === 'del' || sub === 'delete') {
+          const id = parseInt(parts[2]);
+          if (!id) { result = '⚠ Usage: `/snippet del ID`'; break; }
+          snippets.delete(id);
+          result = `🗑️ Snippet #${id} deleted.`;
+          break;
+        }
+        break;
+      }
+
+      case 'regex': {
+        // /regex pattern | flags | test string
+        const rest = parts.slice(1).join(' ');
+        const segs = rest.split('|').map(s => s.trim());
+        if (segs.length < 2) { result = '⚠ Usage: `/regex pattern | flags | test string`\nExample: `/regex \\d+ | g | abc 123 def 456`'; break; }
+        const pattern = segs[0];
+        const flags = segs.length >= 3 ? segs[1] : 'g';
+        const text = segs.length >= 3 ? segs[2] : segs[1];
+        result = formatRegexResult(testRegex(pattern, flags, text));
+        break;
+      }
+
+      case 'json': {
+        const sub = parts[1]?.toLowerCase();
+        const text = parts.slice(2).join(' ');
+        if (sub === 'pretty' || sub === 'format') {
+          const r = jsonPretty(text);
+          result = r.success ? `\`\`\`json\n${r.output}\n\`\`\`` : `❌ ${r.error}`;
+        } else if (sub === 'min' || sub === 'minify') {
+          const r = jsonMinify(text);
+          result = r.success ? `\`\`\`\n${r.output}\n\`\`\`` : `❌ ${r.error}`;
+        } else if (sub === 'validate' || sub === 'check') {
+          const r = jsonValidate(text);
+          result = r.valid ? `✅ Valid JSON — type: ${r.type}${r.keys != null ? `, ${r.keys} keys` : ''}${r.length != null ? `, ${r.length} items` : ''}` : `❌ ${r.error}`;
+        } else {
+          result = '⚠ Usage: `/json pretty|minify|validate <json>`';
+        }
+        break;
+      }
+
+      case 'encode': {
+        const type = parts[1]?.toLowerCase();
+        const text = parts.slice(2).join(' ');
+        const ops = { base64: encodeBase64, url: encodeURL, hex: encodeHex };
+        if (!ops[type]) { result = '⚠ Usage: `/encode base64|url|hex <text>`'; break; }
+        result = formatEncodeDecode(`Encode ${type}`, text, ops[type](text));
+        break;
+      }
+
+      case 'decode': {
+        const type = parts[1]?.toLowerCase();
+        const text = parts.slice(2).join(' ');
+        const ops = { base64: decodeBase64, url: decodeURL, hex: decodeHex };
+        if (!ops[type]) { result = '⚠ Usage: `/decode base64|url|hex <text>`'; break; }
+        try {
+          result = formatEncodeDecode(`Decode ${type}`, text, ops[type](text));
+        } catch { result = '❌ Invalid input for decoding'; }
+        break;
+      }
+
+      case 'hash': {
+        const algo = parts[1]?.toLowerCase() || 'sha256';
+        const text = parts.slice(2).join(' ');
+        if (!text) { result = '⚠ Usage: `/hash sha256|md5|sha1 <text>`'; break; }
+        result = formatEncodeDecode(`Hash (${algo})`, text, hashText(text, algo));
+        break;
+      }
+
+      case 'diff': {
+        // /diff text1 ||| text2
+        const rest = parts.slice(1).join(' ');
+        const sep = rest.indexOf('|||');
+        if (sep === -1) { result = '⚠ Usage: `/diff text1 ||| text2`'; break; }
+        const a = rest.slice(0, sep).trim();
+        const b = rest.slice(sep + 3).trim();
+        result = formatDiff(diffStrings(a, b));
+        break;
+      }
+
+      case 'scaffold':
+      case 'new': {
+        const template = parts[1]?.toLowerCase();
+        if (!template) { result = `⚠ Usage: \`/scaffold <template>\`\nTemplates: ${Object.keys(TEMPLATES).join(', ')}`; break; }
+        const dir = parts[2] || join(process.env.HOME || process.env.USERPROFILE || '.', 'Projects', `velle-${template}-${Date.now().toString(36)}`);
+        const r = scaffoldProject(template, dir);
+        result = r.error ? `⚠ ${r.error}` : formatScaffold(r) + `\n📂 Location: \`${dir}\``;
+        break;
+      }
+
+      case 'ports': {
+        ws.send(JSON.stringify({ type: 'system_msg', content: '🔌 Scanning ports...' }));
+        const r = await scanPorts();
+        result = formatPorts(r);
+        break;
+      }
+
+      case 'http':
+      case 'fetch':
+      case 'curl': {
+        const url = parts[1];
+        const method = parts[2]?.toUpperCase() || 'GET';
+        if (!url) { result = '⚠ Usage: `/http <url> [GET|POST]`'; break; }
+        ws.send(JSON.stringify({ type: 'system_msg', content: `🌐 ${method} ${url}...` }));
+        const r = await httpRequest(url, method);
+        result = formatHttpResult(r);
+        break;
+      }
+
+      case 'loc':
+      case 'lines':
+      case 'codestats': {
+        const dir = parts[1] || process.cwd();
+        ws.send(JSON.stringify({ type: 'system_msg', content: '📊 Counting lines...' }));
+        const r = countLines(dir);
+        result = formatCodeStats(r);
+        break;
+      }
+
       // ── Achievements, Insights, Briefing, Dashboard ──
 
       case 'achievements':
@@ -1302,6 +1568,8 @@ async function handleSlashCommand(ws, content, sessionId) {
 **📚 Knowledge** — /kb [add Title | Content|search|read|del]
 
 **📊 Overview** — /dashboard /briefing /achievements /insights
+
+**💻 Coding** — /run [lang] [code] /snippet [save|get|run|search|del] /regex /json [pretty|minify|validate] /encode /decode /hash /diff /scaffold /ports /http /loc
 
 Or just ask naturally. 😼`;
         break;

@@ -40,11 +40,30 @@ async function startServer() {
   try {
     const fileUrl = 'file:///' + serverPath.replace(/\\/g, '/');
     serverModule = await import(fileUrl);
-    console.log('[VELLE.AI] Server loaded');
+
+    if (serverModule?.default?.start) {
+      await serverModule.default.start();
+    }
+
+    console.log('[VELLE.AI] Server module loaded OK');
   } catch (err) {
     console.error('[VELLE.AI] Server failed to start:', err.message);
     console.error(err.stack);
   }
+}
+async function waitForServer(url, timeout = 15000) {
+  const start = Date.now();
+
+  while (Date.now() - start < timeout) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return true;
+    } catch {}
+
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  return false;
 }
 
 function getIconPath() {

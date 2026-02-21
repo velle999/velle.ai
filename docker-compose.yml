@@ -1,0 +1,36 @@
+services:
+  velle-ai:
+    build: .
+    container_name: velle-ai
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - MODEL=auto
+      - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - velle-data:/app/memory
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    # Uncomment for GPU support:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  velle-data:
+  ollama-models:

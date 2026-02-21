@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+*.exe
+*.md
+memory/companion.db
+electron.cjs
+package-electron.json
+start.bat
+start.ps1
